@@ -726,7 +726,7 @@ function handleAgentMessage(d) {
     contentEl.innerHTML = (d.content && d.content.startsWith('[Error:'))
       ? '<span style="color:var(--red);font-size:13px;">' + d.content + '</span>'
       : formatContent(d.content);
-    scrollToBottom();
+    // Don't auto-scroll here — let user read while messages stream in
   }
 }
 
@@ -1157,9 +1157,75 @@ function renderSourcesSection(text) {
   }).join('');
 }
 
-function scrollToBottom() {
+// Smart scroll: only auto-scrolls when user is at/near the bottom.
+// When scrolled up, shows a "↓ 最新内容" badge to jump back.
+let _scrolledUp = false;
+let _lastScrollTop = 0;
+let _jumpBtn = null;
+
+function scrollToBottom(force) {
   const area = document.getElementById('debateArea');
-  if (area) area.scrollTop = area.scrollHeight;
+  if (!area) return;
+  if (force) {
+    area.scrollTop = area.scrollHeight;
+    _scrolledUp = false;
+    if (_jumpBtn) { _jumpBtn.style.display = 'none'; }
+    return;
+  }
+  if (_scrolledUp) return; // user scrolled up — don't interrupt
+  area.scrollTop = area.scrollHeight;
+}
+
+function _onDebateAreaScroll() {
+  const area = document.getElementById('debateArea');
+  if (!area) return;
+  // atBottom = user is within 80px of the bottom edge
+  const distFromBottom = area.scrollHeight - area.scrollTop - area.clientHeight;
+  if (distFromBottom < 80) {
+    // Near bottom — resume auto-follow
+    _scrolledUp = false;
+    if (_jumpBtn) _jumpBtn.style.display = 'none';
+  } else {
+    // Scrolled up — stop auto-follow, show jump button
+    _scrolledUp = true;
+    _ensureJumpBtn(area);
+  }
+}
+
+function _ensureJumpBtn(area) {
+  if (!_jumpBtn) {
+    _jumpBtn = document.createElement('button');
+    _jumpBtn.id = 'jumpToLatest';
+    _jumpBtn.innerHTML = '↓ 最新内容';
+    _jumpBtn.style.cssText = [
+      'position:fixed',
+      'bottom:24px',
+      'left:50%',
+      'transform:translateX(-50%)',
+      'background:linear-gradient(135deg,var(--accent),#6b5cf0)',
+      'color:white',
+      'border:none',
+      'border-radius:24px',
+      'padding:8px 20px',
+      'font-size:13px',
+      'font-weight:700',
+      'cursor:pointer',
+      'box-shadow:0 4px 16px rgba(124,111,255,0.4)',
+      'z-index:9999',
+      'transition:opacity 0.2s',
+      'display:none',
+    ].join(';');
+    _jumpBtn.onclick = function() { scrollToBottom(true); };
+    document.body.appendChild(_jumpBtn);
+  }
+  // Position it above the right panel
+  const panel = document.getElementById('inputPanel');
+  if (panel) {
+    const rect = panel.getBoundingClientRect();
+    _jumpBtn.style.left = 'auto';
+    _jumpBtn.style.right = (window.innerWidth - rect.left + 4) + 'px';
+  }
+  _jumpBtn.style.display = 'block';
 }
 
 function hexToRgb(hex) {
@@ -1314,6 +1380,16 @@ async function saveApiConfig() {
     settingsProviders = data.providers || {}; settingsCurrentConfig = data; settingsCurrentProvider = data.provider || 'minimax';
     updateApiBadge(data);
   } catch (e) { console.error('Failed to load config on init:', e); }
+})();
+
+// Attach smart scroll listener to debate area
+(function() {
+  const area = document.getElementById('debateArea');
+  if (area) area.addEventListener('scroll', _onDebateAreaScroll, { passive: true });
+  // Also watch resize for jump button repositioning
+  window.addEventListener('resize', function() {
+    if (_scrolledUp) { _ensureJumpBtn(document.getElementById('debateArea')); }
+  }, { passive: true });
 })();
 </script>
 </body>
