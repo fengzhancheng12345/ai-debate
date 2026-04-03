@@ -13,11 +13,17 @@ from researcher import DebateResearcher
 import time
 
 class DeepSeekClient:
-    API_KEY = "sk-9d1169e00d184d1799e390d05e2c2e52"
+    """DeepSeek fallback client — key loaded from DEEPSEEK_API_KEY env var."""
     URL = "https://api.deepseek.com/chat/completions"
+
+    def __init__(self):
+        import os
+        self.API_KEY = os.environ.get("DEEPSEEK_API_KEY", "")
 
     def chat(self, messages, system="", max_tokens=8000):
         import requests
+        if not self.API_KEY:
+            return "[Error: DeepSeek API key not set (DEEPSEEK_API_KEY env)]"
         headers = {"Authorization": f"Bearer {self.API_KEY}", "Content-Type": "application/json"}
         body = {"model": "deepseek-chat", "max_tokens": max_tokens, "messages": []}
         if system:
@@ -33,11 +39,23 @@ class DeepSeekClient:
 
 deepseek_client = DeepSeekClient()
 
+def _get_minimax_client():
+    """Build a MiniMax client from environment variables (local default)."""
+    import os
+    from minimax import MiniMaxClient
+    api_key = os.environ.get("MINIMAX_API_KEY", "")
+    base_url = os.environ.get("MINIMAX_BASE_URL", "https://api.minimax.io/anthropic")
+    model = os.environ.get("MINIMAX_MODEL", "MiniMax-M2.7")
+    max_tokens = int(os.environ.get("MINIMAX_MAX_TOKENS", "8000"))
+    timeout = int(os.environ.get("MINIMAX_TIMEOUT", "60"))
+    if not api_key:
+        return None
+    return MiniMaxClient(api_key, base_url, model, max_tokens, timeout)
+
+
 def call_with_retry(messages, system="", client=None, max_retries=2):
     if client is None:
-        from minimax import MiniMaxClient
-        from config import MINIMAX_API_KEY, MINIMAX_BASE_URL, MINIMAX_MODEL, MINIMAX_MAX_TOKENS, MINIMAX_TIMEOUT
-        client = MiniMaxClient(MINIMAX_API_KEY, MINIMAX_BASE_URL, MINIMAX_MODEL, MINIMAX_MAX_TOKENS, MINIMAX_TIMEOUT)
+        client = _get_minimax_client()
     
     for attempt in range(max_retries + 1):
         result = client.chat(messages, system=system)

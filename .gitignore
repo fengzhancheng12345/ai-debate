@@ -6,3 +6,5 @@ venv/
 .DS_Store
 *.db
 config.py
+config.json
+.env

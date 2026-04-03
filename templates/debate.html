@@ -3,593 +3,436 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>AI 辩论系统</title>
+<title>AI 辩论系统 v2.0</title>
 <style>
 :root {
-  --bg: #0a0a14;
-  --bg2: #0f0f1e;
-  --bg3: #161628;
-  --text: #e0e0f0;
-  --text2: #8888aa;
-  --border: #2a2a4a;
-  --accent: #6c63ff;
-  --accent2: #ff6b6b;
-  --green: #4ade80;
-  --red: #f87171;
+  --bg: #080810;
+  --bg2: #0d0d1a;
+  --bg3: #12121f;
+  --bg4: #1a1a2e;
+  --text: #dcdcf0;
+  --text2: #7070a0;
+  --border: #22223a;
+  --accent: #7c6fff;
+  --accent-glow: rgba(124,111,255,0.25);
+  --green: #5de89c;
+  --red: #ff6b6b;
   --yellow: #fbbf24;
   --purple: #a78bfa;
   --cyan: #22d3ee;
+  --orange: #f97316;
 }
-
 * { box-sizing: border-box; margin: 0; padding: 0; }
-
 html { height: 100%; overflow: hidden; }
-
 body {
   background: var(--bg);
   color: var(--text);
-  font-family: 'Segoe UI', system-ui, sans-serif;
+  font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
   height: 100%;
   overflow: hidden;
   display: flex;
   flex-direction: column;
 }
 
+/* ===== HEADER ===== */
 .header {
   background: var(--bg2);
   border-bottom: 1px solid var(--border);
-  padding: 12px 24px;
+  padding: 0 24px;
   display: flex;
   align-items: center;
   gap: 16px;
   flex-shrink: 0;
-  height: 52px;
+  height: 54px;
+  z-index: 100;
 }
-.header h1 { font-size: 18px; font-weight: 600; color: var(--accent); }
-.header .status { font-size: 12px; color: var(--text2); margin-left: auto; }
-
-.main {
-  display: flex;
-  flex: 1;
+.header-left { display: flex; align-items: center; gap: 12px; }
+.logo { font-size: 20px; line-height: 1; }
+.header h1 {
+  font-size: 17px;
+  font-weight: 700;
+  background: linear-gradient(135deg, var(--accent), var(--cyan));
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+.header-center { flex: 1; display: flex; justify-content: center; }
+.topic-chip {
+  background: var(--bg4);
+  border: 1px solid var(--border);
+  border-radius: 24px;
+  padding: 4px 16px;
+  font-size: 13px;
+  color: var(--text);
+  max-width: 400px;
   overflow: hidden;
-  min-height: 0;
-  height: calc(100vh - 52px);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  display: none;
 }
+.topic-chip.visible { display: block; }
+.header-right { display: flex; align-items: center; gap: 10px; margin-left: auto; }
+#apiStatusBadge {
+  font-size: 11px; padding: 3px 10px; border-radius: 20px;
+  background: rgba(248,113,113,0.12); color: var(--red);
+  border: 1px solid rgba(248,113,113,0.3); cursor: pointer; transition: all 0.2s;
+}
+#apiStatusBadge.ok {
+  background: rgba(93,232,156,0.12); color: var(--green);
+  border-color: rgba(93,232,156,0.3); cursor: default;
+}
+.header-btn {
+  background: var(--bg4); border: 1px solid var(--border); color: var(--text2);
+  padding: 5px 14px; border-radius: 8px; cursor: pointer; font-size: 13px;
+  transition: all 0.2s; display: flex; align-items: center; gap: 6px;
+}
+.header-btn:hover { border-color: var(--accent); color: var(--accent); }
+#exportBtn { display: none; background: rgba(124,111,255,0.15); border-color: rgba(124,111,255,0.4); color: var(--accent); }
+#exportBtn:hover { background: rgba(124,111,255,0.25); }
 
-/* LEFT: Debate area - THIS is the scrollable region */
+/* ===== MAIN LAYOUT ===== */
+.main { display: flex; flex: 1; overflow: hidden; min-height: 0; }
 .debate-area {
   flex: 1 1 auto;
-  overflow-y: scroll;
-  overflow-x: hidden;
-  padding: 20px;
-  display: flex;
-  flex-direction: column;
-  gap: 16px;
-  min-height: 0;
-  height: 100%;
-  scroll-behavior: smooth;
-  align-content: flex-start;
+  overflow-y: scroll; overflow-x: hidden;
+  padding: 20px 24px 60px;
+  display: flex; flex-direction: column; gap: 16px;
+  min-height: 0; height: calc(100vh - 54px); scroll-behavior: smooth;
 }
-
-/* RIGHT: Input panel */
 .input-panel {
-  width: 340px;
-  background: var(--bg2);
-  border-left: 1px solid var(--border);
-  display: flex;
-  flex-direction: column;
-  flex-shrink: 0;
-  height: 100%;
-  overflow: hidden;
+  width: 320px; background: var(--bg2); border-left: 1px solid var(--border);
+  display: flex; flex-direction: column; flex-shrink: 0; height: 100%; overflow: hidden;
 }
 
+/* ===== PHASE BANNER ===== */
 .phase-banner {
-  background: linear-gradient(135deg, var(--accent), var(--purple));
-  color: white;
-  padding: 12px 20px;
-  border-radius: 12px;
-  text-align: center;
-  font-weight: 600;
-  font-size: 15px;
-  animation: fadeSlide 0.4s ease;
+  background: linear-gradient(135deg, rgba(124,111,255,0.18), rgba(34,211,238,0.12));
+  border: 1px solid rgba(124,111,255,0.35); color: var(--accent);
+  padding: 11px 20px; border-radius: 14px; text-align: center;
+  font-weight: 700; font-size: 14px; animation: fadeSlide 0.4s ease;
+  backdrop-filter: blur(10px); flex-shrink: 0;
 }
 
-.groups-bar {
-  display: flex;
-  gap: 8px;
-  flex-wrap: wrap;
-}
+/* ===== GROUPS BAR ===== */
+.groups-bar { display: flex; gap: 8px; flex-wrap: wrap; }
 .group-badge {
-  background: var(--bg3);
-  border: 1px solid var(--border);
-  border-radius: 20px;
-  padding: 4px 12px;
-  font-size: 12px;
-  color: var(--text2);
+  background: var(--bg3); border: 1px solid var(--border); border-radius: 20px;
+  padding: 4px 12px; font-size: 12px; color: var(--text2); transition: all 0.3s;
 }
-.group-badge.active { border-color: var(--accent); color: var(--accent); }
+.group-badge.active { border-color: var(--accent); color: var(--accent); box-shadow: 0 0 8px var(--accent-glow); animation: glow-pulse 1.5s infinite; }
 .group-badge.done { border-color: var(--green); color: var(--green); }
 
+/* ===== GROUP CARDS ===== */
 .group-card {
-  background: var(--bg2);
-  border: 1px solid var(--border);
-  border-radius: 16px;
-  animation: fadeSlide 0.3s ease;
-  flex-shrink: 0;
+  background: var(--bg2); border: 1px solid var(--border); border-radius: 16px;
+  animation: fadeSlide 0.35s ease; flex-shrink: 0; overflow: hidden; transition: border-color 0.3s;
 }
+.group-card.active { border-color: rgba(124,111,255,0.35); }
 .group-header {
-  background: var(--bg3);
-  padding: 12px 16px;
-  font-weight: 600;
-  font-size: 14px;
-  display: flex;
-  align-items: center;
-  gap: 8px;
+  background: linear-gradient(90deg, var(--bg4), var(--bg3)); padding: 12px 18px;
+  font-weight: 700; font-size: 14px; display: flex; align-items: center; gap: 8px;
   border-bottom: 1px solid var(--border);
 }
-.group-desc { font-size: 12px; color: var(--text2); font-weight: 400; margin-left: auto; }
-
-.agent-entry {
-  padding: 12px 16px;
-  border-bottom: 1px solid var(--border);
-  animation: fadeSlide 0.3s ease;
-  flex-shrink: 0;
-}
+.group-desc { font-size: 11px; color: var(--text2); font-weight: 400; margin-left: auto; }
+.agent-entry { padding: 14px 18px; border-bottom: 1px solid var(--border); animation: fadeSlide 0.3s ease; }
 .agent-entry:last-child { border-bottom: none; }
+.agent-meta { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
+.agent-avatar {
+  width: 32px; height: 32px; border-radius: 50%; display: flex; align-items: center;
+  justify-content: center; font-size: 16px; flex-shrink: 0; border: 1.5px solid;
+}
+.agent-name { font-weight: 700; font-size: 14px; }
+.agent-role { font-size: 11px; color: var(--text2); background: var(--bg); padding: 2px 8px; border-radius: 10px; margin-left: 4px; }
+.agent-content { font-size: 14px; line-height: 1.85; color: var(--text); white-space: pre-wrap; word-break: break-word; }
+.agent-content code { background: var(--bg); padding: 2px 6px; border-radius: 4px; font-family: 'Fira Code', monospace; font-size: 13px; }
 
-.agent-meta {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  margin-bottom: 8px;
-}
-.agent-name { font-weight: 600; font-size: 14px; }
-.agent-role { font-size: 11px; color: var(--text2); background: var(--bg); padding: 2px 8px; border-radius: 10px; }
-.agent-content {
-  font-size: 14px;
-  line-height: 1.8;
-  color: var(--text);
-  white-space: pre-wrap;
-  word-break: break-word;
-  overflow-wrap: break-word;
-  max-width: 100%;
-}
-.agent-content code {
-  background: var(--bg);
-  padding: 2px 6px;
-  border-radius: 4px;
-  font-family: 'Fira Code', monospace;
-  font-size: 13px;
-  white-space: pre-wrap;
-  word-break: break-all;
-}
-
-.round-marker {
-  text-align: center;
-  color: var(--text2);
-  font-size: 12px;
-  padding: 4px;
-}
-.round-marker::before, .round-marker::after {
-  content: '──';
-  margin: 0 8px;
-  color: var(--border);
-}
-
-/* Research card - shown during data gathering phase */
+/* ===== RESEARCH CARD ===== */
 .research-card {
-  background: var(--bg2);
-  border: 1px solid var(--border);
-  border-radius: 16px;
-  padding: 16px;
-  animation: fadeSlide 0.3s ease;
+  background: var(--bg2); border: 1px solid rgba(34,211,238,0.3); border-radius: 16px;
+  padding: 18px 20px; animation: fadeSlide 0.3s ease; flex-shrink: 0;
 }
-.research-header {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  margin-bottom: 12px;
-  font-weight: 600;
-  font-size: 14px;
-  color: var(--cyan);
-}
-.sources-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
-  gap: 8px;
-  margin-top: 8px;
-}
+.research-header { display: flex; align-items: center; gap: 10px; margin-bottom: 12px; font-weight: 700; font-size: 14px; color: var(--cyan); }
+.sources-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); gap: 8px; margin-top: 10px; }
 .source-badge {
-  background: var(--bg3);
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  padding: 6px 10px;
-  font-size: 11px;
-  display: flex;
-  align-items: center;
-  gap: 6px;
+  background: var(--bg3); border: 1px solid var(--border); border-radius: 8px;
+  padding: 6px 10px; font-size: 11px; display: flex; align-items: center; gap: 6px; color: var(--text2); transition: all 0.3s;
 }
-.source-badge.done { border-color: var(--cyan); color: var(--cyan); }
+.source-badge.done { border-color: var(--cyan); color: var(--cyan); background: rgba(34,211,238,0.08); }
 .source-badge .check { color: var(--green); }
-.source-badge .spinner { border: 1.5px solid var(--border); border-top-color: var(--cyan); }
 
-/* Voting section */
-.voting-section { margin-top: 8px; }
-.vote-card {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 8px 12px;
-  background: var(--bg3);
-  border-radius: 10px;
-  margin-bottom: 6px;
-}
+/* ===== VOTE CARDS ===== */
+.vote-card { display: flex; align-items: center; gap: 10px; padding: 8px 14px; background: var(--bg3); border-radius: 10px; margin-bottom: 6px; animation: fadeSlide 0.25s ease; }
 .vote-emoji { font-size: 18px; }
 .vote-name { font-size: 13px; font-weight: 500; flex: 1; }
-.vote-tag {
-  font-size: 11px;
-  font-weight: 600;
-  padding: 2px 10px;
-  border-radius: 10px;
-}
-.vote-tag.sup { background: rgba(74,222,128,0.15); color: var(--green); }
-.vote-tag.against { background: rgba(248,113,113,0.15); color: var(--red); }
+.vote-tag { font-size: 11px; font-weight: 700; padding: 3px 10px; border-radius: 10px; }
+.vote-tag.sup { background: rgba(93,232,156,0.15); color: var(--green); }
+.vote-tag.against { background: rgba(255,107,107,0.15); color: var(--red); }
 .vote-tag.neutral { background: rgba(251,191,36,0.15); color: var(--yellow); }
 .vote-reason { font-size: 12px; color: var(--text2); margin-top: 2px; }
 .group-result {
-  background: linear-gradient(135deg, rgba(108,99,255,0.1), rgba(167,139,250,0.1));
-  border: 1px solid var(--accent);
-  border-radius: 10px;
-  padding: 10px 14px;
-  text-align: center;
-  font-weight: 600;
-  color: var(--accent);
-  margin-top: 8px;
+  background: linear-gradient(135deg, rgba(124,111,255,0.12), rgba(34,211,238,0.08));
+  border: 1px solid rgba(124,111,255,0.35); border-radius: 10px;
+  padding: 10px 16px; text-align: center; font-weight: 700; color: var(--accent); margin-top: 8px;
 }
 
-/* Final answer */
+/* ===== VOTE TRACKER ===== */
+.vote-tracker {
+  background: linear-gradient(135deg, rgba(124,111,255,0.1), rgba(167,139,250,0.06));
+  border: 1px solid rgba(124,111,255,0.28); border-radius: 16px; padding: 14px 18px;
+  flex-shrink: 0; position: sticky; top: 0; z-index: 10; animation: fadeSlide 0.4s ease;
+  backdrop-filter: blur(12px);
+}
+.vote-tracker-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; }
+.vote-tracker-title { font-size: 13px; font-weight: 700; color: var(--accent); display: flex; align-items: center; gap: 6px; }
+.vote-tracker-toggle {
+  font-size: 11px; color: var(--text2); background: none; border: 1px solid var(--border);
+  border-radius: 6px; padding: 2px 8px; cursor: pointer; transition: all 0.2s;
+}
+.vote-tracker-toggle:hover { border-color: var(--accent); color: var(--accent); }
+.vote-tracker-body { display: flex; flex-direction: column; gap: 8px; }
+.vote-group-row { display: flex; align-items: center; gap: 10px; font-size: 13px; }
+.vote-group-name { font-weight: 600; min-width: 80px; color: var(--text); }
+.vote-bar-container { flex: 1; display: flex; gap: 2px; height: 6px; border-radius: 3px; overflow: hidden; background: var(--bg4); }
+.vote-bar-sup { background: var(--green); transition: width 0.6s ease; }
+.vote-bar-against { background: var(--red); transition: width 0.6s ease; }
+.vote-bar-neutral { background: var(--yellow); transition: width 0.6s ease; }
+.vote-group-status { font-size: 12px; font-weight: 600; min-width: 50px; text-align: right; }
+
+/* ===== STATS ===== */
+.stats-summary {
+  background: var(--bg2); border: 1px solid var(--border); border-radius: 16px;
+  padding: 18px 20px; flex-shrink: 0; animation: fadeSlide 0.4s ease;
+}
+.stats-title { font-size: 14px; font-weight: 700; color: var(--accent); margin-bottom: 14px; display: flex; align-items: center; gap: 8px; }
+.stats-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-bottom: 14px; }
+.stat-item { background: var(--bg3); border-radius: 10px; padding: 10px 8px; text-align: center; }
+.stat-number { font-size: 26px; font-weight: 800; line-height: 1; margin-bottom: 4px; }
+.stat-number.green { color: var(--green); }
+.stat-number.red { color: var(--red); }
+.stat-number.yellow { color: var(--yellow); }
+.stat-label { font-size: 11px; color: var(--text2); font-weight: 500; }
+.stats-bar-container { background: var(--bg3); border-radius: 8px; height: 10px; overflow: hidden; display: flex; margin-bottom: 6px; }
+.stats-bar-sup { background: var(--green); transition: width 0.8s ease; height: 100%; }
+.stats-bar-against { background: var(--red); transition: width 0.8s ease; height: 100%; }
+.stats-bar-neutral { background: var(--yellow); transition: width 0.8s ease; height: 100%; }
+.stats-bar-labels { display: flex; justify-content: space-between; font-size: 11px; color: var(--text2); }
+
+/* ===== COMPARISON ===== */
+.comparison-card {
+  background: var(--bg2); border: 1px solid rgba(251,191,36,0.25); border-radius: 14px;
+  padding: 16px 18px; flex-shrink: 0; animation: fadeSlide 0.4s ease;
+}
+.comparison-title { font-size: 13px; font-weight: 700; color: var(--yellow); margin-bottom: 12px; display: flex; align-items: center; gap: 6px; }
+.comparison-row { display: flex; align-items: center; gap: 10px; font-size: 13px; padding: 6px 0; border-bottom: 1px solid var(--border); }
+.comparison-row:last-child { border-bottom: none; }
+.comparison-label { min-width: 60px; font-weight: 600; color: var(--text2); }
+.comparison-badge { padding: 3px 10px; border-radius: 8px; font-size: 12px; font-weight: 700; }
+.comparison-badge.sup { background: rgba(93,232,156,0.15); color: var(--green); }
+.comparison-badge.against { background: rgba(255,107,107,0.15); color: var(--red); }
+.comparison-badge.neutral { background: rgba(251,191,36,0.15); color: var(--yellow); }
+.comparison-badge.user { background: rgba(124,111,255,0.15); color: var(--accent); }
+
+/* ===== FINAL ANSWER ===== */
 .final-card {
-  background: linear-gradient(135deg, #1a1a2e, #16213e);
-  border: 2px solid var(--accent);
-  border-radius: 20px;
-  padding: 24px;
-  margin-top: 8px;
-  animation: fadeSlide 0.5s ease;
+  background: linear-gradient(135deg, #0f0f22, #141430);
+  border: 1px solid rgba(124,111,255,0.4); border-radius: 20px; padding: 24px;
+  flex-shrink: 0; animation: fadeSlide 0.6s ease; box-shadow: 0 0 40px rgba(124,111,255,0.08);
 }
-.final-title {
-  font-size: 16px;
-  font-weight: 700;
-  color: var(--accent);
-  margin-bottom: 16px;
-  display: flex;
-  align-items: center;
-  gap: 8px;
+.final-title { font-size: 16px; font-weight: 800; color: var(--accent); margin-bottom: 16px; display: flex; align-items: center; gap: 8px; }
+.final-content { font-size: 14px; line-height: 2; white-space: pre-wrap; color: var(--text); }
+.final-content h2 { color: var(--yellow); font-size: 15px; margin: 14px 0 6px; }
+.final-content h3 { color: var(--cyan); font-size: 14px; margin: 12px 0 4px; }
+.export-area { margin-top: 16px; padding-top: 16px; border-top: 1px solid var(--border); display: flex; gap: 10px; }
+.btn-export {
+  flex: 1; padding: 9px; background: rgba(124,111,255,0.15);
+  border: 1px solid rgba(124,111,255,0.4); border-radius: 10px;
+  color: var(--accent); font-size: 13px; font-weight: 600; cursor: pointer;
+  transition: all 0.2s; display: flex; align-items: center; justify-content: center; gap: 6px;
 }
-.final-content {
-  font-size: 15px;
-  line-height: 1.9;
-  white-space: pre-wrap;
-  color: var(--text);
-}
-.final-content h2 { color: var(--yellow); font-size: 15px; margin: 12px 0 6px; }
-.final-content h3 { color: var(--cyan); font-size: 14px; margin: 10px 0 4px; }
+.btn-export:hover { background: rgba(124,111,255,0.25); transform: translateY(-1px); }
 
-/* RIGHT: User input panel */
-
+/* ===== RIGHT PANEL ===== */
 .input-panel-header {
-  padding: 16px 20px;
-  border-bottom: 1px solid var(--border);
-  font-weight: 600;
-  font-size: 14px;
-  color: var(--accent);
-  display: flex;
-  align-items: center;
-  gap: 8px;
+  padding: 14px 16px; border-bottom: 1px solid var(--border);
+  font-weight: 700; font-size: 13px; color: var(--accent); display: flex; align-items: center; gap: 8px; flex-shrink: 0;
 }
-
 .input-form {
-  padding: 16px;
-  border-bottom: 1px solid var(--border);
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-  overflow-y: auto;
-  flex: 1;
+  padding: 14px; border-bottom: 1px solid var(--border);
+  display: flex; flex-direction: column; gap: 10px; overflow-y: auto; flex: 1;
 }
-
-/* Dynamic form styles */
-#topicInputArea > div {
-  margin-bottom: 4px;
-}
-#topicInputArea label {
-  display: block;
-  font-size: 12px;
-  color: var(--text2);
-  font-weight: 500;
-  margin-bottom: 5px;
-}
+.input-label { display: block; font-size: 12px; color: var(--text2); font-weight: 500; margin-bottom: 5px; }
+.input-label .required { color: var(--red); }
 #topicInput {
-  width: 100%;
-  background: var(--bg3);
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  color: var(--text);
-  padding: 8px 10px;
-  font-size: 13px;
-  font-family: inherit;
-  outline: none;
-  transition: border-color 0.2s;
+  width: 100%; background: var(--bg3); border: 1px solid var(--border); border-radius: 10px;
+  color: var(--text); padding: 9px 12px; font-size: 13px; font-family: inherit; outline: none; transition: border-color 0.2s, box-shadow 0.2s;
 }
-#topicInput:focus { border-color: var(--accent); }
-
-#dynamicFieldsContainer > div {
-  margin-bottom: 12px;
-}
-#dynamicFieldsContainer label {
-  display: block;
-  font-size: 12px;
-  color: var(--text2);
-  font-weight: 500;
-  margin-bottom: 5px;
-}
-#dynamicFieldsContainer label .field-desc {
-  font-weight: 400;
-  color: var(--text2);
-  font-size: 11px;
-  margin-left: 4px;
-}
+#topicInput:focus { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-glow); }
+#topicInput::placeholder { color: var(--text2); opacity: 0.7; }
+#dynamicFieldsContainer > div { margin-bottom: 12px; }
+#dynamicFieldsContainer label { display: block; font-size: 12px; color: var(--text2); font-weight: 500; margin-bottom: 5px; }
+#dynamicFieldsContainer label .field-desc { font-weight: 400; color: var(--text2); font-size: 11px; margin-left: 4px; }
 #dynamicFieldsContainer input[type="text"],
 #dynamicFieldsContainer textarea,
 #dynamicFieldsContainer select {
-  width: 100%;
-  background: var(--bg3);
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  color: var(--text);
-  padding: 8px 10px;
-  font-size: 13px;
-  font-family: inherit;
-  outline: none;
-  transition: border-color 0.2s;
+  width: 100%; background: var(--bg3); border: 1px solid var(--border); border-radius: 8px;
+  color: var(--text); padding: 8px 10px; font-size: 13px; font-family: inherit;
+  outline: none; transition: border-color 0.2s, box-shadow 0.2s;
 }
 #dynamicFieldsContainer input[type="text"]:focus,
 #dynamicFieldsContainer textarea:focus,
-#dynamicFieldsContainer select:focus {
-  border-color: var(--accent);
-}
-#dynamicFieldsContainer textarea {
-  resize: vertical;
-  min-height: 60px;
-}
+#dynamicFieldsContainer select:focus { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-glow); }
+#dynamicFieldsContainer textarea { resize: vertical; min-height: 60px; }
 
-.btn {
-  flex: 1;
-  padding: 9px;
-  border: none;
-  border-radius: 10px;
-  font-size: 14px;
-  font-weight: 600;
-  cursor: pointer;
-  transition: all 0.2s;
-}
-.btn-primary {
-  background: var(--accent);
-  color: white;
-}
-.btn-primary:hover { background: #5b52e0; transform: translateY(-1px); }
-.btn-primary:disabled { background: var(--border); color: var(--text2); cursor: not-allowed; transform: none; }
-.btn-secondary {
-  background: var(--bg3);
-  color: var(--text);
-  border: 1px solid var(--border);
-}
-.btn-secondary:hover { border-color: var(--accent); }
+/* ===== BUTTONS ===== */
+.btn { flex: 1; padding: 9px; border: none; border-radius: 10px; font-size: 14px; font-weight: 700; cursor: pointer; transition: all 0.2s; }
+.btn-primary { background: linear-gradient(135deg, var(--accent), #6b5cf0); color: white; box-shadow: 0 4px 14px rgba(124,111,255,0.3); }
+.btn-primary:hover { transform: translateY(-2px); box-shadow: 0 6px 20px rgba(124,111,255,0.4); }
+.btn-primary:disabled { background: var(--bg3); color: var(--text2); box-shadow: none; cursor: not-allowed; transform: none; }
+.btn-secondary { background: var(--bg3); color: var(--text); border: 1px solid var(--border); }
+.btn-secondary:hover { border-color: var(--accent); color: var(--accent); }
 
-/* Debate status in input panel */
-.debate-status {
-  flex: 1;
-  overflow-y: auto;
-  padding: 12px;
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
+/* ===== STATUS ===== */
+.debate-status { flex: 1; overflow-y: auto; padding: 12px; display: flex; flex-direction: column; gap: 6px; }
 .status-item {
-  background: var(--bg3);
-  border-radius: 10px;
-  padding: 10px 12px;
-  font-size: 12px;
-  color: var(--text2);
-  display: flex;
-  align-items: center;
-  gap: 8px;
+  background: var(--bg3); border-radius: 8px; padding: 8px 12px; font-size: 12px; color: var(--text2);
+  display: flex; align-items: center; gap: 8px; transition: all 0.3s;
 }
-.status-item.active { border-left: 3px solid var(--accent); color: var(--accent); }
-.status-item.done { border-left: 3px solid var(--green); color: var(--green); }
-.status-dot {
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  background: var(--border);
-  flex-shrink: 0;
-}
+.status-item.active { border-left: 3px solid var(--accent); color: var(--accent); background: rgba(124,111,255,0.06); }
+.status-item.done { border-left: 3px solid var(--green); color: var(--green); background: rgba(93,232,156,0.06); }
+.status-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--border); flex-shrink: 0; }
 .status-item.active .status-dot { background: var(--accent); animation: pulse 1.5s infinite; }
 .status-item.done .status-dot { background: var(--green); }
-.spinner {
-  width: 14px;
-  height: 14px;
-  border: 2px solid var(--border);
-  border-top-color: var(--accent);
-  border-radius: 50%;
-  animation: spin 0.8s linear infinite;
-  flex-shrink: 0;
-}
 
+/* ===== USER VOTE IN PANEL ===== */
+#userVotePanel { display: none; padding: 14px; border-top: 1px solid var(--border); flex-shrink: 0; }
+.user-vote-header { font-size: 13px; font-weight: 700; color: var(--yellow); margin-bottom: 12px; display: flex; align-items: center; gap: 6px; }
+.user-vote-buttons { display: flex; gap: 8px; }
+.user-vote-btn {
+  flex: 1; padding: 8px; border: 2px solid var(--border); border-radius: 10px;
+  background: var(--bg3); color: var(--text); font-size: 13px; font-weight: 600;
+  cursor: pointer; transition: all 0.2s; display: flex; flex-direction: column; align-items: center; gap: 4px;
+}
+.user-vote-btn:hover { transform: translateY(-2px); }
+.user-vote-btn.selected.sup { border-color: var(--green); background: rgba(93,232,156,0.15); color: var(--green); }
+.user-vote-btn.selected.against { border-color: var(--red); background: rgba(255,107,107,0.15); color: var(--red); }
+.user-vote-btn.selected.neutral { border-color: var(--yellow); background: rgba(251,191,36,0.15); color: var(--yellow); }
+.user-vote-btn span.emoji { font-size: 20px; }
+.user-vote-btn span.label { font-size: 12px; }
+.user-vote-reason { margin-top: 10px; display: none; }
+.user-vote-reason textarea {
+  width: 100%; background: var(--bg); border: 1px solid var(--border); border-radius: 8px;
+  color: var(--text); padding: 8px 10px; font-size: 13px; font-family: inherit;
+  resize: vertical; min-height: 56px; outline: none; transition: border-color 0.2s;
+}
+.user-vote-reason textarea:focus { border-color: var(--yellow); }
+.user-vote-submit {
+  margin-top: 8px; width: 100%; padding: 9px;
+  background: linear-gradient(135deg, var(--yellow), var(--orange));
+  border: none; border-radius: 8px; color: #1a1a2e; font-size: 13px; font-weight: 700;
+  cursor: pointer; transition: all 0.2s; display: none;
+}
+.user-vote-submit:hover { opacity: 0.88; transform: translateY(-1px); }
+.user-vote-submit.submitted { background: var(--bg3); color: var(--green); border: 1px solid var(--green); cursor: default; }
+.user-vote-result { margin-top: 8px; font-size: 13px; color: var(--yellow); font-weight: 600; display: none; animation: fadeSlide 0.3s ease; }
+
+/* ===== WELCOME ===== */
+.welcome-screen {
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  flex: 1; gap: 16px; padding: 60px 40px; text-align: center; min-height: 0;
+}
+.welcome-emoji { font-size: 56px; animation: float 3s ease-in-out infinite; }
+.welcome-title { font-size: 22px; font-weight: 800; background: linear-gradient(135deg, var(--accent), var(--cyan)); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text; }
+.welcome-sub { font-size: 13px; color: var(--text2); max-width: 280px; line-height: 1.7; }
+.welcome-features { display: flex; gap: 12px; margin-top: 8px; flex-wrap: wrap; justify-content: center; }
+.welcome-feature {
+  background: var(--bg3); border: 1px solid var(--border); border-radius: 12px;
+  padding: 10px 14px; font-size: 12px; color: var(--text2); display: flex; align-items: center; gap: 6px;
+}
+.welcome-feature span:first-child { font-size: 16px; }
+
+/* ===== SETTINGS MODAL ===== */
+#settingsOverlay {
+  display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.75);
+  z-index: 1000; align-items: center; justify-content: center; backdrop-filter: blur(4px);
+}
+#settingsOverlay.open { display: flex; }
+#settingsModal {
+  background: var(--bg2); border: 1px solid var(--border); border-radius: 20px;
+  width: 500px; max-width: 95vw; max-height: 88vh; overflow-y: auto;
+  animation: fadeSlide 0.25s ease; box-shadow: 0 24px 80px rgba(0,0,0,0.6);
+}
+.settings-header {
+  padding: 20px 24px 16px; border-bottom: 1px solid var(--border);
+  display: flex; align-items: center; justify-content: space-between;
+  position: sticky; top: 0; background: var(--bg2); z-index: 1;
+}
+.settings-header h2 { font-size: 17px; color: var(--accent); }
+.settings-header h2 span { font-size: 12px; color: var(--text2); font-weight: 400; margin-left: 8px; }
+#settingsClose { background: none; border: none; color: var(--text2); font-size: 24px; cursor: pointer; padding: 0 4px; line-height: 1; transition: color 0.2s; }
+#settingsClose:hover { color: var(--text); }
+.settings-body { padding: 20px 24px 24px; }
+.settings-provider-grid { display: grid; grid-template-columns: repeat(5, 1fr); gap: 6px; margin-bottom: 20px; }
+.provider-btn {
+  background: var(--bg3); border: 2px solid var(--border); border-radius: 10px; padding: 8px 4px;
+  text-align: center; cursor: pointer; transition: all 0.2s; color: var(--text2);
+  font-size: 10px; line-height: 1.3; display: flex; flex-direction: column; align-items: center; gap: 3px;
+}
+.provider-btn:hover { border-color: var(--accent); color: var(--text); }
+.provider-btn.selected { border-color: var(--accent); background: rgba(124,111,255,0.15); color: var(--accent); }
+.provider-btn .picon { font-size: 18px; }
+.settings-field { margin-bottom: 14px; }
+.settings-field label { display: block; font-size: 12px; color: var(--text2); margin-bottom: 6px; font-weight: 500; }
+.settings-field input,
+.settings-field select {
+  width: 100%; background: var(--bg3); border: 1px solid var(--border); border-radius: 10px;
+  color: var(--text); padding: 9px 12px; font-size: 13px; outline: none;
+  transition: border-color 0.2s, box-shadow 0.2s; box-sizing: border-box;
+}
+.settings-field input:focus,
+.settings-field select:focus { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-glow); }
+.settings-field input::placeholder { color: var(--text2); opacity: 0.6; }
+.settings-hint { font-size: 11px; color: var(--text2); margin-top: 4px; }
+.settings-actions { display: flex; gap: 10px; margin-top: 20px; padding-top: 16px; border-top: 1px solid var(--border); }
+.btn-test { flex: 1; padding: 10px; background: var(--bg3); border: 1px solid var(--border); border-radius: 10px; color: var(--text); font-size: 13px; font-weight: 600; cursor: pointer; transition: all 0.2s; }
+.btn-test:hover { border-color: var(--accent); color: var(--accent); }
+.btn-save {
+  flex: 2; padding: 10px; background: linear-gradient(135deg, var(--accent), #6b5cf0);
+  border: none; border-radius: 10px; color: white; font-size: 13px; font-weight: 700;
+  cursor: pointer; transition: all 0.2s; box-shadow: 0 4px 12px rgba(124,111,255,0.3);
+}
+.btn-save:hover { opacity: 0.88; transform: translateY(-1px); }
+.btn-save:disabled { opacity: 0.35; cursor: not-allowed; transform: none; box-shadow: none; }
+#settingsTestResult { margin-top: 12px; padding: 10px 14px; border-radius: 10px; font-size: 13px; display: none; word-break: break-all; }
+#settingsTestResult.ok { display: block; background: rgba(93,232,156,0.1); border: 1px solid rgba(93,232,156,0.3); color: var(--green); }
+#settingsTestResult.fail { display: block; background: rgba(255,107,107,0.1); border: 1px solid rgba(255,107,107,0.3); color: var(--red); }
+#settingsTestResult.testing { display: block; background: rgba(251,191,36,0.1); border: 1px solid rgba(251,191,36,0.3); color: var(--yellow); }
+.settings-footer { margin-top: 14px; padding: 10px 12px; background: var(--bg3); border-radius: 10px; font-size: 11px; color: var(--text2); line-height: 1.8; }
+.settings-footer strong { color: var(--text); }
+
+/* ===== ANIMATIONS ===== */
 @keyframes spin { to { transform: rotate(360deg); } }
 @keyframes fadeSlide { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
 @keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.3; } }
+@keyframes float { 0%,100% { transform: translateY(0); } 50% { transform: translateY(-8px); } }
+@keyframes glow-pulse { 0%,100% { box-shadow: 0 0 6px var(--accent-glow); } 50% { box-shadow: 0 0 16px var(--accent-glow); } }
 
-/* ============ Settings Modal ============ */
-#settingsOverlay {
-  display: none;
-  position: fixed;
-  inset: 0;
-  background: rgba(0,0,0,0.7);
-  z-index: 1000;
-  align-items: center;
-  justify-content: center;
-}
-#settingsOverlay.open { display: flex; }
-
-#settingsModal {
-  background: var(--bg2);
-  border: 1px solid var(--border);
-  border-radius: 20px;
-  width: 480px;
-  max-width: 95vw;
-  max-height: 90vh;
-  overflow-y: auto;
-  animation: fadeSlide 0.25s ease;
-  box-shadow: 0 20px 60px rgba(0,0,0,0.5);
-}
-
-.settings-header {
-  padding: 20px 24px 16px;
-  border-bottom: 1px solid var(--border);
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-}
-.settings-header h2 { font-size: 17px; color: var(--accent); }
-.settings-header h2 span { font-size: 13px; color: var(--text2); font-weight: 400; margin-left: 8px; }
-
-#settingsClose {
-  background: none;
-  border: none;
-  color: var(--text2);
-  font-size: 22px;
-  cursor: pointer;
-  padding: 0 4px;
-  line-height: 1;
-}
-#settingsClose:hover { color: var(--text); }
-
-.settings-body { padding: 20px 24px; }
-
-.settings-provider-grid {
-  display: grid;
-  grid-template-columns: repeat(4, 1fr);
-  gap: 6px;
-  margin-bottom: 20px;
-}
-.provider-btn {
-  background: var(--bg3);
-  border: 2px solid var(--border);
-  border-radius: 10px;
-  padding: 8px 4px;
-  text-align: center;
-  cursor: pointer;
-  transition: all 0.2s;
-  color: var(--text2);
-  font-size: 11px;
-  line-height: 1.3;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 3px;
-}
-.provider-btn:hover { border-color: var(--accent); color: var(--text); }
-.provider-btn.selected { border-color: var(--accent); background: rgba(108,99,255,0.15); color: var(--accent); }
-.provider-btn .picon { font-size: 18px; }
-
-.settings-field { margin-bottom: 14px; }
-.settings-field label {
-  display: block;
-  font-size: 12px;
-  color: var(--text2);
-  margin-bottom: 6px;
-  font-weight: 500;
-}
-.settings-field input,
-.settings-field select {
-  width: 100%;
-  background: var(--bg3);
-  border: 1px solid var(--border);
-  border-radius: 10px;
-  color: var(--text);
-  padding: 9px 12px;
-  font-size: 14px;
-  outline: none;
-  transition: border-color 0.2s;
-  box-sizing: border-box;
-}
-.settings-field input:focus,
-.settings-field select:focus { border-color: var(--accent); }
-.settings-field input::placeholder { color: var(--text2); opacity: 0.6; }
-
-.settings-hint {
-  font-size: 11px;
-  color: var(--text2);
-  margin-top: 4px;
-}
-
-.settings-actions {
-  display: flex;
-  gap: 10px;
-  margin-top: 20px;
-  padding-top: 16px;
-  border-top: 1px solid var(--border);
-}
-.btn-test {
-  flex: 1;
-  padding: 10px;
-  background: var(--bg3);
-  border: 1px solid var(--border);
-  border-radius: 10px;
-  color: var(--text);
-  font-size: 14px;
-  cursor: pointer;
-  transition: all 0.2s;
-}
-.btn-test:hover { border-color: var(--accent); color: var(--accent); }
-.btn-save {
-  flex: 2;
-  padding: 10px;
-  background: var(--accent);
-  border: none;
-  border-radius: 10px;
-  color: white;
-  font-size: 14px;
-  font-weight: 600;
-  cursor: pointer;
-  transition: opacity 0.2s;
-}
-.btn-save:hover { opacity: 0.85; }
-.btn-save:disabled { opacity: 0.4; cursor: not-allowed; }
-
-#settingsTestResult {
-  margin-top: 12px;
-  padding: 10px 14px;
-  border-radius: 10px;
-  font-size: 13px;
-  display: none;
-  word-break: break-all;
-}
-#settingsTestResult.ok { display: block; background: rgba(74,222,128,0.1); border: 1px solid var(--green); color: var(--green); }
-#settingsTestResult.fail { display: block; background: rgba(248,113,113,0.1); border: 1px solid var(--red); color: var(--red); }
-#settingsTestResult.testing { display: block; background: rgba(251,191,36,0.1); border: 1px solid var(--yellow); color: var(--yellow); }
+.spinner { width: 14px; height: 14px; border: 2px solid var(--border); border-top-color: var(--accent); border-radius: 50%; animation: spin 0.8s linear infinite; flex-shrink: 0; }
+.spinner-sm { width: 12px; height: 12px; border: 2px solid var(--border); border-top-color: var(--accent); border-radius: 50%; animation: spin 0.8s linear infinite; display: inline-block; vertical-align: middle; }
 </style>
 </head>
 <body>
 
 <div class="header">
-  <h1>🤖 AI 辩论系统</h1>
-  <div id="apiStatusBadge" style="font-size:11px;padding:3px 10px;border-radius:20px;background:rgba(248,113,113,0.15);color:var(--red);border:1px solid var(--red);cursor:pointer;margin-left:8px;" onclick="openSettings()" title="点击配置 API">⚠️ 未配置</div>
-  <div class="status" id="statusText" style="margin-left:auto;">就绪 — 输入话题开始辩论</div>
-  <button onclick="openSettings()" style="background:none;border:1px solid var(--border);color:var(--text2);padding:5px 12px;border-radius:8px;cursor:pointer;font-size:13px;display:flex;align-items:center;gap:6px;flex-shrink:0;" title="API 设置">⚙️ 设置</button>
+  <div class="header-left"><span class="logo">🎙️</span><h1>AI 辩论系统</h1></div>
+  <div class="header-center"><div class="topic-chip" id="topicChip"></div></div>
+  <div class="header-right">
+    <div id="apiStatusBadge" onclick="openSettings()">⚠️ 未配置</div>
+    <button class="header-btn" id="exportBtn" onclick="exportDebate('md')">📥 导出报告</button>
+    <button class="header-btn" onclick="openSettings()">⚙️ 设置</button>
+  </div>
 </div>
 
-<!-- Settings Modal -->
+<!-- SETTINGS MODAL -->
 <div id="settingsOverlay" onclick="if(event.target===this)closeSettings()">
   <div id="settingsModal" onclick="event.stopPropagation()">
     <div class="settings-header">
@@ -597,38 +440,25 @@ body {
       <button id="settingsClose" onclick="closeSettings()">&times;</button>
     </div>
     <div class="settings-body">
-      <div style="font-size:12px;color:var(--text2);margin-bottom:14px;">选择 AI 服务提供商，填入你的 API Key。Key 只保存在本地浏览器中。</div>
-
-      <!-- Provider selection -->
+      <div style="font-size:12px;color:var(--text2);margin-bottom:14px;">选择 AI 服务提供商，API Key 仅保存在本地浏览器中。</div>
       <div style="margin-bottom:16px;">
         <div style="font-size:12px;color:var(--text2);margin-bottom:8px;font-weight:500;">服务提供商</div>
         <div class="settings-provider-grid" id="providerGrid"></div>
       </div>
-
-      <!-- Dynamic fields -->
       <div id="settingsFields"></div>
-
       <div id="settingsTestResult"></div>
-
       <div class="settings-actions">
         <button class="btn-test" id="testBtn" onclick="testApiConfig()">🔬 测试连接</button>
         <button class="btn-save" id="saveBtn" onclick="saveApiConfig()">💾 保存设置</button>
       </div>
-
-      <div style="margin-top:14px;padding:10px 12px;background:var(--bg3);border-radius:10px;font-size:11px;color:var(--text2);line-height:1.7;">
-        💡 <strong style="color:var(--text);">隐私说明</strong>：API Key 仅存储在本地，不会发送到任何第三方服务器。
-        <br>🔑 <strong style="color:var(--text);">获取 Key</strong>：
+      <div class="settings-footer">
+        💡 <strong>隐私说明</strong>：API Key 仅存储在本地，不会上传到任何服务器。<br>
+        🔑 <strong>获取 Key</strong>：
         <a href="https://platform.minimax.io" target="_blank" style="color:var(--accent);">MiniMax</a> ·
         <a href="https://platform.deepseek.com" target="_blank" style="color:var(--accent);">DeepSeek</a> ·
         <a href="https://platform.openai.com" target="_blank" style="color:var(--accent);">OpenAI</a> ·
         <a href="https://console.anthropic.com" target="_blank" style="color:var(--accent);">Anthropic</a> ·
-        <a href="://aistudio.google.com" target="_blank" style="color:var(--accent);">Google</a> ·
-        <a href="https://console.mistral.ai" target="_blank" style="color:var(--accent);">Mistral</a> ·
-        <a href="https://console.cohere.com" target="_blank" style="color:var(--accent);">Cohere</a> ·
-        <a href="https://api.together.xyz" target="_blank" style="color:var(--accent);">Together</a> ·
-        <a href="https://huggingface.co/settings/inference" target="_blank" style="color:var(--accent);">HuggingFace</a> ·
-        <a href="https://novita.ai" target="_blank" style="color:var(--accent);">Novita</a> ·
-        <a href="https://portal.azure.com" target="_blank" style="color:var(--accent);">Azure</a> ·
+        <a href="https://aistudio.google.com" target="_blank" style="color:var(--accent);">Google</a> ·
         <a href="https://console.groq.com" target="_blank" style="color:var(--accent);">Groq</a> ·
         <a href="https://openrouter.ai/keys" target="_blank" style="color:var(--accent);">OpenRouter</a>
       </div>
@@ -636,155 +466,106 @@ body {
   </div>
 </div>
 
+<!-- MAIN -->
 <div class="main">
-  <!-- LEFT: Debate content -->
   <div class="debate-area" id="debateArea">
-    <!-- Persistent vote tracker survives innerHTML clears -->
-    <div id="voteTrackerTop" style="display:none;background:linear-gradient(135deg,rgba(108,99,255,0.15),rgba(167,139,250,0.1));border:1px solid var(--accent);border-radius:16px;padding:14px 18px;margin-bottom:8px;flex-shrink:0;position:sticky;top:0;z-index:10;">
-      <div style="font-size:13px;font-weight:700;color:var(--accent);margin-bottom:10px;">📊 实时投票监控</div>
-      <div id="voteTrackerGroups" style="display:flex;flex-direction:column;gap:8px;"></div>
-    </div>
-
-    <!-- Dynamic debate content (cleared on groups_created) -->
+    <div id="voteTrackerTop" style="display:none;"></div>
     <div id="debateContent">
-    <div style="text-align:center;padding:60px 20px;color:var(--text2);">
-      <div style="font-size:48px;margin-bottom:16px;">💬</div>
-      <div>输入话题，点击「发起辩论」</div>
-      <div style="font-size:13px;margin-top:8px;">AI 角色将临时创建，围绕话题展开真实辩论</div>
-    </div>
+      <div class="welcome-screen" id="welcomeScreen">
+        <div class="welcome-emoji">🎙️</div>
+        <div class="welcome-title">AI 辩论系统 v2.0</div>
+        <div class="welcome-sub">输入话题，多个 AI 角色展开真实辩论，收集真实数据，并进行投票统计</div>
+        <div class="welcome-features">
+          <div class="welcome-feature"><span>🤖</span> 多智能体</div>
+          <div class="welcome-feature"><span>🔍</span> 实时研究</div>
+          <div class="welcome-feature"><span>🗳️</span> 投票统计</div>
+          <div class="welcome-feature"><span>📥</span> 报告导出</div>
+        </div>
+      </div>
     </div>
   </div>
 
-  <!-- RIGHT: Input panel -->
-  <div class="input-panel">
+  <div class="input-panel" id="inputPanel">
     <div class="input-panel-header">📝 发起辩论</div>
-    
     <div class="input-form">
-      
-      <!-- Step 1: Topic input (always visible initially) -->
       <div id="topicInputArea">
         <div>
-          <label>核心话题 <span style="color:var(--red)">*</span></label>
+          <label class="input-label">核心话题 <span class="required">*</span></label>
           <input type="text" id="topicInput" placeholder="输入你想辩论的话题，如：现在买电车合适吗"
                  onkeydown="if(event.key==='Enter'){event.preventDefault();analyzeTopic();}" />
         </div>
-        <button class="btn btn-primary" id="analyzeBtn" onclick="analyzeTopic()" style="margin-top:12px;width:100%;padding:10px;font-size:15px;">
-          🤖 开始分析话题
-        </button>
-        <p style="font-size:11px;color:var(--text2);margin-top:8px;text-align:center;">
-          输入话题后，AI会分析需要哪些背景信息
-        </p>
+        <button class="btn btn-primary" id="analyzeBtn" onclick="analyzeTopic()" style="margin-top:10px;width:100%;padding:11px;font-size:15px;">🤖 开始分析话题</button>
+        <p style="font-size:11px;color:var(--text2);margin-top:8px;text-align:center;">输入话题后，AI 会分析需要哪些背景信息</p>
       </div>
-      
-      <!-- Step 2: Dynamic form (shown after analysis) -->
       <div id="dynamicFormArea" style="display:none;">
-        <div id="analyzedTopicBanner" style="font-size:12px;color:var(--green);font-weight:600;margin-bottom:10px;word-break:break-all;"></div>
-        
-        <div id="dynamicFieldsContainer">
-          <!-- Fields are generated dynamically by JavaScript -->
-        </div>
-        
+        <div id="analyzedTopicBanner" style="font-size:12px;color:var(--green);font-weight:600;margin-bottom:10px;word-break:break-all;padding:6px 10px;background:rgba(93,232,156,0.08);border-radius:8px;border:1px solid rgba(93,232,156,0.2);"></div>
+        <div id="dynamicFieldsContainer"></div>
         <div style="margin-top:14px;">
-          <button class="btn btn-primary" id="startDebateBtn" onclick="startDebate()" style="width:100%;padding:10px;font-size:15px;">
-            🚀 开始辩论
-          </button>
-          <button onclick="resetForm()" style="width:100%;margin-top:8px;background:none;border:none;color:var(--text2);font-size:12px;cursor:pointer;">
-            ← 换一个话题
-          </button>
+          <button class="btn btn-primary" id="startDebateBtn" onclick="startDebate()" style="width:100%;padding:11px;font-size:15px;">🚀 开始辩论</button>
+          <button onclick="resetForm()" style="width:100%;margin-top:8px;background:none;border:none;color:var(--text2);font-size:12px;cursor:pointer;padding:6px;">← 换一个话题</button>
         </div>
       </div>
-      
     </div>
-    
     <div class="input-panel-header" style="border-top:1px solid var(--border);font-size:13px;">📡 实时进度</div>
-    <div class="debate-status" id="statusArea">
-      <div class="status-item" style="color:var(--text2);">
-        <div class="status-dot"></div>
-        等待发起辩论...
+    <div class="debate-status" id="statusArea"><div class="status-item"><div class="status-dot"></div> 等待发起辩论...</div></div>
+    <div id="userVotePanel">
+      <div class="user-vote-header">🗳️ 你的立场是什么？</div>
+      <div class="user-vote-buttons">
+        <button class="user-vote-btn" id="uvSup" onclick="selectUserVote('支持')"><span class="emoji">👍</span><span class="label">支持</span></button>
+        <button class="user-vote-btn" id="uvAgainst" onclick="selectUserVote('反对')"><span class="emoji">👎</span><span class="label">反对</span></button>
+        <button class="user-vote-btn" id="uvNeutral" onclick="selectUserVote('中立')"><span class="emoji">🤔</span><span class="label">中立</span></button>
       </div>
+      <div class="user-vote-reason" id="uvReason">
+        <textarea id="uvReasonText" placeholder="简要说明你的立场原因（选填）"></textarea>
+        <button class="user-vote-submit" id="uvSubmit" onclick="submitUserVote()">提交我的投票</button>
+      </div>
+      <div class="user-vote-result" id="uvResult"></div>
     </div>
   </div>
 </div>
 
 <script>
-let currentSession = null;
-let evtSource = null;
-let isRunning = false;
-let activeGroups = {};
-let currentRound = 0;
+// ==================== STATE ====================
+let currentSession = null, evtSource = null, isRunning = false, activeGroups = {};
+let currentRound = 0, currentTopic = '', currentFields = [];
+let debateCompletedData = null, userVoteSubmitted = false, userVoteChoice = null, userVoteReason = '';
 
-// Dynamic form state
-let currentTopic = '';
-let currentFields = [];
-
-// ==================== DYNAMIC FORM FUNCTIONS ====================
-
+// ==================== DYNAMIC FORM ====================
 async function analyzeTopic() {
   const topic = document.getElementById('topicInput').value.trim();
   if (!topic) { alert('请输入话题'); return; }
-
   const btn = document.getElementById('analyzeBtn');
   btn.disabled = true;
-  btn.innerHTML = '<div class="spinner" style="display:inline-block;width:12px;height:12px;border:2px solid rgba(255,255,255,0.3);border-top-color:#fff;border-radius:50%;animation:spin 0.8s linear infinite;vertical-align:middle;margin-right:6px;"></div> AI分析中...';
-
+  btn.innerHTML = '<span class="spinner-sm"></span> AI 分析中...';
   try {
-    const resp = await fetch('/api/debate/analyze', {
-      method: 'POST',
-      headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({topic})
-    });
+    const resp = await fetch('/api/debate/analyze', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({topic}) });
     const data = await resp.json();
-    
-    if (data.error) {
-      alert('分析失败: ' + data.error);
-      return;
-    }
-    
-    currentTopic = topic;
-    currentFields = data.fields || [];
-    renderDynamicForm(currentFields);
-    
-    // Switch to step 2 - show the dynamic form
+    if (data.error) { alert('分析失败: ' + data.error); return; }
+    currentTopic = topic; currentFields = data.fields || []; renderDynamicForm(currentFields);
     document.getElementById('topicInputArea').style.display = 'none';
     document.getElementById('dynamicFormArea').style.display = 'block';
     document.getElementById('analyzedTopicBanner').textContent = '✓ ' + topic;
-    
-    // Scroll input panel to top
     document.querySelector('.input-form').scrollTop = 0;
-    
-  } catch(err) {
-    alert('分析出错: ' + err.message);
-  } finally {
-    btn.disabled = false;
-    btn.innerHTML = '🤖 重新分析话题';
-  }
+  } catch(err) { alert('分析出错: ' + err.message); }
+  finally { btn.disabled = false; btn.innerHTML = '🤖 重新分析话题'; }
 }
 
 function renderDynamicForm(fields) {
   const container = document.getElementById('dynamicFieldsContainer');
   container.innerHTML = '';
-  
   fields.forEach(field => {
     const div = document.createElement('div');
-    
     const label = document.createElement('label');
     label.innerHTML = field.label + (field.description ? '<span class="field-desc">— ' + field.description + '</span>' : '');
-    
     let input = '';
-    
     if (field.type === 'select') {
-      const opts = (field.options || []).map(opt => 
-        '<option value="' + opt + '">' + opt + '</option>'
-      ).join('');
+      const opts = (field.options || []).map(opt => '<option value="' + opt + '">' + opt + '</option>').join('');
       input = '<select id="field_' + field.key + '" name="' + field.key + '">' + opts + '</select>';
     } else if (field.type === 'textarea') {
-      input = '<textarea id="field_' + field.key + '" name="' + field.key + '" ' +
-        'rows="2" placeholder="' + (field.placeholder || '') + '"></textarea>';
+      input = '<textarea id="field_' + field.key + '" name="' + field.key + '" rows="2" placeholder="' + (field.placeholder || '') + '"></textarea>';
     } else {
-      input = '<input type="text" id="field_' + field.key + '" name="' + field.key + '" ' +
-        'placeholder="' + (field.placeholder || '') + '" />';
+      input = '<input type="text" id="field_' + field.key + '" name="' + field.key + '" placeholder="' + (field.placeholder || '') + '" />';
     }
-    
     div.appendChild(label);
     div.insertAdjacentHTML('beforeend', input);
     container.appendChild(div);
@@ -792,71 +573,59 @@ function renderDynamicForm(fields) {
 }
 
 function resetForm() {
-  stopDebate(); // Stop any running debate first
-  currentTopic = '';
-  currentFields = [];
+  stopDebate();
+  currentTopic = ''; currentFields = [];
   document.getElementById('topicInputArea').style.display = 'block';
   document.getElementById('dynamicFormArea').style.display = 'none';
   document.getElementById('topicInput').value = '';
   document.getElementById('dynamicFieldsContainer').innerHTML = '';
   document.querySelector('.input-form').scrollTop = 0;
+  debateCompletedData = null;
+  document.getElementById('exportBtn').style.display = 'none';
+  document.getElementById('userVotePanel').style.display = 'none';
+  userVoteSubmitted = false; userVoteChoice = null;
 }
 
-// ==================== DEBATE FUNCTIONS ====================
-
+// ==================== DEBATE ====================
 function startDebate() {
   const topic = currentTopic || document.getElementById('topicInput').value.trim();
   if (!topic) { alert('请先输入话题'); return; }
-
-  // Stop any running debate and fully clean up
   stopDebate();
-
-  // Collect all field values into structured format
   const parts = [topic];
-  
   currentFields.forEach(field => {
     const el = document.getElementById('field_' + field.key);
-    if (el) {
-      const val = el.value.trim();
-      if (val) {
-        parts.push('【' + field.label + '】' + val);
-      }
-    }
+    if (el) { const val = el.value.trim(); if (val) parts.push('【' + field.label + '】' + val); }
   });
-  
   const user_input = parts.join('\n');
 
-  // Reset vote tracker
-  const voteTrackerTop = document.getElementById('voteTrackerTop');
-  if (voteTrackerTop) voteTrackerTop.style.display = 'none';
-  document.getElementById('voteTrackerGroups').innerHTML = '';
+  const chip = document.getElementById('topicChip');
+  chip.textContent = topic; chip.classList.add('visible');
 
-  // Reset debate content (preserve voteTrackerTop inside debateArea)
-  const debateArea = document.getElementById('debateArea');
-  const debateContent = document.getElementById('debateContent');
-  if (debateContent) debateContent.innerHTML = '';
+  const ws = document.getElementById('welcomeScreen');
+  if (ws) ws.style.display = 'none';
+
+  document.getElementById('voteTrackerTop').style.display = 'none';
+  document.getElementById('voteTrackerTop').innerHTML = '';
+  document.getElementById('userVotePanel').style.display = 'none';
+  userVoteSubmitted = false; userVoteChoice = null;
+  debateCompletedData = null;
+  document.getElementById('exportBtn').style.display = 'none';
+
+  const content = document.getElementById('debateContent');
+  content.innerHTML = '';
   document.getElementById('statusArea').innerHTML = '';
-  currentSession = null;
-  activeGroups = {};
-  currentRound = 0;
-  isRunning = true;
+  currentSession = null; activeGroups = {}; currentRound = 0; isRunning = true;
 
   document.getElementById('analyzeBtn').disabled = true;
-  const startDebateBtn = document.getElementById('startDebateBtn');
-  if (startDebateBtn) startDebateBtn.disabled = true;
+  const sdb = document.getElementById('startDebateBtn');
+  if (sdb) sdb.disabled = true;
   document.getElementById('topicInput').disabled = true;
-  document.getElementById('statusText').textContent = '⚡ 初始化辩论...';
 
-  fetch('/api/debate/start', {
-    method: 'POST',
-    headers: {'Content-Type': 'application/json'},
-    body: JSON.stringify({topic, user_input: user_input})
-  })
+  fetch('/api/debate/start', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({topic, user_input}) })
   .then(r => r.json())
   .then(data => {
     if (data.error) { showError(data.error); return; }
     currentSession = data.session_id;
-    document.getElementById('statusText').textContent = '🔄 辩论进行中...';
     connectStream(currentSession);
   })
   .catch(err => { showError('启动失败: ' + err.message); resetUI(); });
@@ -864,45 +633,22 @@ function startDebate() {
 
 function connectStream(sessionId) {
   evtSource = new EventSource('/api/debate/' + sessionId + '/stream');
-
-  evtSource.onmessage = function(e) {
-    try {
-      const evt = JSON.parse(e.data);
-      handleEvent(evt);
-    } catch(err) {
-      console.error('Parse error:', err, e.data);
-    }
-  };
-
-  evtSource.onerror = function() {
-    if (isRunning) { addStatus('❌ 连接中断', 'error'); isRunning = false; }
-    evtSource.close();
-    resetUI();
-  };
-
-  evtSource.addEventListener('stream_end', function() {
-    isRunning = false;
-    evtSource.close();
-    addStatus('✅ 辩论完成', 'done');
-    document.getElementById('statusText').textContent = '✅ 辩论已完成';
-    resetUI();
-  });
+  evtSource.onmessage = function(e) { try { handleEvent(JSON.parse(e.data)); } catch(err) { console.error('Parse error:', err, e.data); } };
+  evtSource.onerror = function() { if (isRunning) { addStatus('❌ 连接中断', ''); isRunning = false; } evtSource.close(); resetUI(); };
+  evtSource.addEventListener('stream_end', function() { isRunning = false; evtSource.close(); addStatus('✅ 辩论完成', 'done'); resetUI(); });
 }
 
+// ==================== EVENT HANDLERS ====================
 function handleEvent(evt) {
-  const t = evt.type;
-  const d = evt.data || evt;
-
-  if (t === 'ping') return;
+  const t = evt.type, d = evt.data || evt;
+  if (t === 'ping' || t === 'stream_end') return;
   if (t === 'error') { showError(d.message); return; }
-  if (t === 'stream_end') return;
-
   if (t === 'phase') { addPhaseBanner(d.title); addStatus(d.phase + ' 阶段', 'active'); }
-  else if (t === 'planner_message') { addPhaseBanner('🧠 主策划: ' + d.content.substring(0, 100)); }
+  else if (t === 'planner_message') { addPhaseBanner('🧠 策划: ' + d.content.substring(0, 100)); }
   else if (t === 'groups_created') { handleGroupsCreated(d); }
   else if (t === 'researching') { handleResearching(d); }
   else if (t === 'research_complete') { handleResearchComplete(d); }
-  else if (t === 'round_start') { currentRound = d.round; addPhaseBanner('🔄 第 ' + d.round + ' 轮讨论 — ' + d.title); addStatus('第 ' + d.round + ' 轮进行中', 'active'); }
+  else if (t === 'round_start') { currentRound = d.round; addPhaseBanner('🔄 第 ' + d.round + ' 轮讨论 — ' + (d.title || '')); addStatus('第 ' + d.round + ' 轮进行中', 'active'); }
   else if (t === 'agent_start') { handleAgentStart(d); }
   else if (t === 'agent_message') { handleAgentMessage(d); }
   else if (t === 'agent_done') { handleAgentDone(d); }
@@ -911,305 +657,296 @@ function handleEvent(evt) {
   else if (t === 'vote_cast') { handleVoteCast(d); }
   else if (t === 'group_vote_result') { handleGroupVoteResult(d); }
   else if (t === 'final_answer') { handleFinalAnswer(d); }
-  else if (t === 'complete') {
-    isRunning = false;
-    if (evtSource) evtSource.close();
-    document.getElementById('statusText').textContent = '✅ 辩论完成';
-    addStatus('辩论全部完成', 'done');
-    resetUI();
-  }
+  else if (t === 'complete') { isRunning = false; if (evtSource) evtSource.close(); addStatus('全部完成', 'done'); showUserVotePanel(); document.getElementById('exportBtn').style.display = 'flex'; resetUI(); }
 }
 
 function handleGroupsCreated(d) {
-  d.groups.forEach(g => {
-    activeGroups[g.id] = { ...g, agents: {}, messages: [], votingDone: false };
-  });
-
-  const content = document.getElementById('debateContent');
-  content.innerHTML = '';
-
-  const bar = document.createElement('div');
-  bar.className = 'groups-bar';
-  d.groups.forEach(g => {
-    const badge = document.createElement('div');
-    badge.className = 'group-badge';
-    badge.id = 'badge-' + g.id;
-    badge.textContent = g.name;
-    bar.appendChild(badge);
-  });
+  d.groups.forEach(g => { activeGroups[g.id] = { ...g, _votes: { sup: 0, against: 0, neutral: 0 } }; });
+  const content = document.getElementById('debateContent'); content.innerHTML = '';
+  const bar = document.createElement('div'); bar.className = 'groups-bar';
+  d.groups.forEach(g => { const badge = document.createElement('div'); badge.className = 'group-badge'; badge.id = 'badge-' + g.id; badge.textContent = g.name; bar.appendChild(badge); });
   content.appendChild(bar);
-
   d.groups.forEach(g => {
-    const card = document.createElement('div');
-    card.className = 'group-card';
-    card.id = 'group-' + g.id;
-    card.innerHTML =
-      '<div class="group-header">' + g.name + ' <span class="group-desc">' + g.description + '</span></div>' +
+    const card = document.createElement('div'); card.className = 'group-card'; card.id = 'group-' + g.id;
+    card.innerHTML = '<div class="group-header"><span>' + g.name + '</span><span class="group-desc">' + g.description + '</span></div>' +
       '<div class="agents-container" id="agents-' + g.id + '"></div>' +
       '<div class="voting-section" id="voting-' + g.id + '" style="display:none;padding:12px;"></div>' +
       '<div class="group-result" id="result-' + g.id + '" style="display:none;"></div>';
     content.appendChild(card);
   });
+  buildVoteTracker(d.groups);
 }
 
 function handleResearching(d) {
   const content = document.getElementById('debateContent');
-  const banner = content.querySelector('.phase-banner');
-  if (banner) banner.remove();
-
-  const card = document.createElement('div');
-  card.className = 'research-card';
+  const banner = content.querySelector('.phase-banner'); if (banner) banner.remove();
+  const card = document.createElement('div'); card.className = 'research-card';
   card.id = 'research-card';
-  card.innerHTML =
-    '<div class="research-header">' +
-    '  <span style="font-size:18px;">🔍</span>' +
-    '  <span>正在全网收集真实资料...</span>' +
-    '</div>' +
-    '<div style="font-size:13px;color:var(--text2);margin-bottom:8px;">' +
-    '  实时抓取：网络搜索 · 财经数据 · 学术论文 · 新闻资讯' +
-    '</div>' +
+  card.innerHTML = '<div class="research-header"><span style="font-size:20px;">🔍</span><span>正在全网收集真实资料...</span><span class="spinner-sm" style="margin-left:auto;"></span></div>' +
+    '<div style="font-size:12px;color:var(--text2);margin-bottom:4px;">实时抓取：网络搜索 · 财经数据 · 学术论文 · 新闻资讯</div>' +
     '<div class="sources-grid" id="sources-grid"></div>';
-
-  content.innerHTML = '';
-  content.appendChild(card);
-
-  addStatus('收集资料中', 'active');
+  content.appendChild(card); addStatus('收集资料中', 'active');
 }
 
 function handleResearchComplete(d) {
   const grid = document.getElementById('sources-grid');
-  if (grid && d.sources) {
-    grid.innerHTML = '';
-    d.sources.forEach(src => {
-      const badge = document.createElement('div');
-      badge.className = 'source-badge done';
-      badge.innerHTML = '<span class="check">✓</span><span>' + src + '</span>';
-      grid.appendChild(badge);
-    });
-  }
+  if (grid && d.sources) { grid.innerHTML = ''; d.sources.forEach(src => { const b = document.createElement('div'); b.className = 'source-badge done'; b.innerHTML = '<span class="check">✓</span><span>' + src + '</span>'; grid.appendChild(b); }); }
   addStatus('资料收集完成', 'done');
 }
 
 function handleAgentStart(d) {
-  const container = document.getElementById('agents-' + d.group_id);
-  if (!container) return;
-
-  const entry = document.createElement('div');
-  entry.className = 'agent-entry';
+  const container = document.getElementById('agents-' + d.group_id); if (!container) return;
+  const card = document.getElementById('group-' + d.group_id); if (card) card.classList.add('active');
+  const entry = document.createElement('div'); entry.className = 'agent-entry';
   entry.id = 'agent-entry-' + d.group_id + '-' + d.agent_key;
-  entry.innerHTML =
-    '<div class="agent-meta">' +
-    '<span style="font-size:16px;">' + d.emoji + '</span>' +
-    '<span class="agent-name" style="color:' + (d.color || '#6366f1') + '">' + d.agent_name + '</span>' +
+  entry.innerHTML = '<div class="agent-meta">' +
+    '<div class="agent-avatar" style="border-color:' + (d.color || '#6366f1') + ';background:rgba(' + hexToRgb(d.color || '#6366f1') + ',0.1);">' + d.emoji + '</div>' +
+    '<span class="agent-name" style="color:' + (d.color || '#6366f1') + ';">' + d.agent_name + '</span>' +
     '<span class="agent-role">第' + d.round + '轮</span>' +
-    '<div class="spinner"></div>' +
-    '</div>' +
-    '<div class="agent-content" id="agent-content-' + d.group_id + '-' + d.agent_key + '">思考中...</div>';
-
+    '<span class="spinner" style="margin-left:auto;"></span></div>' +
+    '<div class="agent-content" id="agent-content-' + d.group_id + '-' + d.agent_key + '"><span style="color:var(--text2);font-size:13px;">思考中...</span></div>';
   container.appendChild(entry);
-
-  const badge = document.getElementById('badge-' + d.group_id);
-  if (badge) badge.className = 'group-badge active';
+  const badge = document.getElementById('badge-' + d.group_id); if (badge) badge.className = 'group-badge active';
+  scrollToBottom();
 }
 
 function handleAgentMessage(d) {
   const contentEl = document.getElementById('agent-content-' + d.group_id + '-' + d.agent_key);
-  const entryId = 'agent-entry-' + d.group_id + '-' + d.agent_key;
-  const entry = document.getElementById(entryId);
+  const entry = document.getElementById('agent-entry-' + d.group_id + '-' + d.agent_key);
+  if (entry) { const sp = entry.querySelector('.spinner'); if (sp) sp.remove(); }
   if (contentEl) {
-    // Always remove spinner when content arrives (including errors)
-    if (entry) {
-      const spinner = entry.querySelector('.spinner');
-      if (spinner) spinner.remove();
-    }
-    // Show error in red if content is an error string
-    if (d.content && d.content.startsWith('[Error:')) {
-      contentEl.innerHTML = '<span style="color:var(--red);font-size:13px;">' + d.content + '</span>';
-    } else {
-      contentEl.innerHTML = formatContent(d.content);
-    }
-  } else if (entry) {
-    // Content element not yet created (race condition) - remove spinner anyway
-    const spinner = entry.querySelector('.spinner');
-    if (spinner) spinner.remove();
-    // Create content element if missing
-    const ce = document.createElement('div');
-    ce.className = 'agent-content';
-    ce.id = 'agent-content-' + d.group_id + '-' + d.agent_key;
-    ce.innerHTML = d.content ? formatContent(d.content) : '';
-    entry.appendChild(ce);
+    contentEl.innerHTML = (d.content && d.content.startsWith('[Error:'))
+      ? '<span style="color:var(--red);font-size:13px;">' + d.content + '</span>'
+      : formatContent(d.content);
+    scrollToBottom();
   }
 }
 
 function handleAgentDone(d) {
-  // Safety net: always remove spinner when agent finishes
   const entry = document.getElementById('agent-entry-' + d.group_id + '-' + d.agent_key);
-  if (entry) {
-    const spinner = entry.querySelector('.spinner');
-    if (spinner) spinner.remove();
-    // If no content was ever set, show timeout message
-    const contentEl = document.getElementById('agent-content-' + d.group_id + '-' + d.agent_key);
-    if (contentEl && contentEl.textContent === '思考中...') {
-      contentEl.innerHTML = '<span style="color:var(--yellow);font-size:13px;">[响应超时，内容未能在预期时间内生成]</span>';
-    }
+  if (entry) { const sp = entry.querySelector('.spinner'); if (sp) sp.remove(); }
+  const card = document.getElementById('group-' + d.group_id); if (card) card.classList.remove('active');
+}
+
+function markGroupDone(groupId) { const badge = document.getElementById('badge-' + groupId); if (badge) badge.className = 'group-badge'; }
+
+// ==================== VOTE TRACKER ====================
+function buildVoteTracker(groups) {
+  const tracker = document.getElementById('voteTrackerTop');
+  tracker.style.display = 'block';
+  tracker.innerHTML = '<div class="vote-tracker-header"><div class="vote-tracker-title">📊 实时投票监控</div><button class="vote-tracker-toggle" id="trackerToggle" onclick="toggleVoteTracker()">收起 ▲</button></div><div class="vote-tracker-body" id="trackerBody"></div>';
+  const body = document.getElementById('trackerBody');
+  groups.forEach(g => {
+    const row = document.createElement('div'); row.className = 'vote-group-row';
+    row.id = 'tracker-row-' + g.id;
+    row.innerHTML = '<span class="vote-group-name">' + g.name + '</span>' +
+      '<div class="vote-bar-container" id="bar-' + g.id + '"><div class="vote-bar-sup" style="width:0%"></div><div class="vote-bar-against" style="width:0%"></div><div class="vote-bar-neutral" style="width:0%"></div></div>' +
+      '<span class="vote-group-status" id="tracker-status-' + g.id + '" style="color:var(--text2);">投票中</span>';
+    body.appendChild(row);
+  });
+}
+
+function updateVoteTracker(groupId, votes) {
+  const total = votes.sup + votes.against + votes.neutral; if (total === 0) return;
+  const supPct = (votes.sup / total * 100).toFixed(0);
+  const againstPct = (votes.against / total * 100).toFixed(0);
+  const neutralPct = (votes.neutral / total * 100).toFixed(0);
+  const bar = document.getElementById('bar-' + groupId);
+  if (bar) {
+    const s = bar.querySelector('.vote-bar-sup'), a = bar.querySelector('.vote-bar-against'), n = bar.querySelector('.vote-bar-neutral');
+    if (s) s.style.width = supPct + '%'; if (a) a.style.width = againstPct + '%'; if (n) n.style.width = neutralPct + '%';
   }
 }
 
-function markGroupDone(groupId) {
-  const badge = document.getElementById('badge-' + groupId);
-  if (badge) badge.className = 'group-badge';
+function toggleVoteTracker() {
+  const body = document.getElementById('trackerBody'), btn = document.getElementById('trackerToggle');
+  if (body.style.display === 'none') { body.style.display = 'flex'; btn.textContent = '收起 ▲'; }
+  else { body.style.display = 'none'; btn.textContent = '展开 ▼'; }
 }
 
+// ==================== GROUP VOTING ====================
 function handleGroupVoting(d) {
-  // Show top vote tracker
-  const trackerTop = document.getElementById('voteTrackerTop');
-  trackerTop.style.display = 'block';
-
-  // Add group row to top tracker if not exists
-  let groupRow = document.getElementById('vtracker-' + d.group_id);
-  if (!groupRow) {
-    groupRow = document.createElement('div');
-    groupRow.id = 'vtracker-' + d.group_id;
-    groupRow.style = 'display:flex;align-items:center;gap:10px;font-size:13px;';
-    groupRow.innerHTML =
-      '<span style="font-weight:600;color:var(--accent);min-width:80px;">' + d.group_name + '</span>' +
-      '<span id="vtracker-status-' + d.group_id + '" style="color:var(--text2);">投票中...</span>' +
-      '<span id="vtracker-votes-' + d.group_id + '" style="margin-left:auto;display:flex;gap:6px;"></span>';
-    document.getElementById('voteTrackerGroups').appendChild(groupRow);
-  }
-
-  // Also update group card voting section
   const votingEl = document.getElementById('voting-' + d.group_id);
-  if (votingEl) {
-    votingEl.style.display = 'block';
-    votingEl.innerHTML = '<div style="font-size:12px;color:var(--text2);margin-bottom:8px;display:flex;align-items:center;gap:6px;"><div class="spinner"></div>投票中...</div>';
-  }
+  if (votingEl) { votingEl.style.display = 'block'; votingEl.innerHTML = '<div style="font-size:12px;color:var(--text2);margin-bottom:8px;display:flex;align-items:center;gap:6px;"><span class="spinner-sm"></span> 投票中...</div>'; }
   addStatus(d.group_name + ' 投票中', 'active');
+  const statusEl = document.getElementById('tracker-status-' + d.group_id);
+  if (statusEl) { statusEl.textContent = '投票中...'; statusEl.style.color = 'var(--yellow)'; }
 }
 
 function handleVoteCast(d) {
   const votingEl = document.getElementById('voting-' + d.group_id);
   if (votingEl) {
-    const spinner = votingEl.querySelector('.spinner');
-    if (spinner) spinner.parentElement.remove();
-    const voteClass = d.vote === '支持' ? 'sup' : d.vote === '反对' ? 'against' : 'neutral';
-    const voteCard = document.createElement('div');
-    voteCard.className = 'vote-card';
+    const sp = votingEl.querySelector('.spinner-sm'); if (sp) sp.parentElement.style.display = 'none';
+    const firstDiv = votingEl.querySelector('div'); if (firstDiv && firstDiv.textContent.includes('投票中')) firstDiv.remove();
+    const vc = document.createElement('div'); vc.className = 'vote-card';
     const icon = d.vote === '支持' ? '👍' : d.vote === '反对' ? '👎' : '🤔';
-    voteCard.innerHTML =
-      '<span class="vote-emoji">' + icon + '</span>' +
-      '<span class="vote-name">' + d.agent_name + '</span>' +
-      '<span class="vote-tag ' + voteClass + '">' + d.vote + '</span>';
-    if (!votingEl.querySelector('.vote-card')) votingEl.innerHTML = '';
-    votingEl.appendChild(voteCard);
+    const cls = d.vote === '支持' ? 'sup' : d.vote === '反对' ? 'against' : 'neutral';
+    vc.innerHTML = '<span class="vote-emoji">' + icon + '</span><span class="vote-name">' + d.agent_name + '</span><span class="vote-tag ' + cls + '">' + d.vote + '</span>';
+    votingEl.appendChild(vc);
+    if (d.reason) { const r = document.createElement('div'); r.className = 'vote-reason'; r.textContent = d.reason.substring(0, 100); votingEl.appendChild(r); }
   }
-
-  // Update top tracker: add vote badge to group's votes container
-  const votesSpan = document.getElementById('vtracker-votes-' + d.group_id);
-  if (votesSpan) {
-    const voteClass = d.vote === '支持' ? 'sup' : d.vote === '反对' ? 'against' : 'neutral';
-    const icon = d.vote === '支持' ? '👍' : d.vote === '反对' ? '👎' : '🤔';
-    votesSpan.innerHTML += '<span class="vote-tag ' + voteClass + '" style="font-size:11px;">' + icon + ' ' + d.agent_name + '</span>';
+  if (activeGroups[d.group_id]) {
+    const v = activeGroups[d.group_id]._votes;
+    if (d.vote === '支持') v.sup++; else if (d.vote === '反对') v.against++; else v.neutral++;
+    updateVoteTracker(d.group_id, v);
   }
 }
 
 function handleGroupVoteResult(d) {
   const resultEl = document.getElementById('result-' + d.group_id);
-  if (resultEl) {
-    resultEl.style.display = 'block';
-    const icon = d.group_vote === '支持' ? '✅' : d.group_vote === '反对' ? '❌' : '⚖️';
-    resultEl.innerHTML = icon + ' ' + d.group_name + ' 共识: <strong>' + d.group_vote + '</strong>';
-  }
-  const badge = document.getElementById('badge-' + d.group_id);
-  if (badge) badge.className = 'group-badge done';
-
-  // Update top tracker: show final consensus
-  const statusEl = document.getElementById('vtracker-status-' + d.group_id);
-  if (statusEl) {
-    const icon = d.group_vote === '支持' ? '✅' : d.group_vote === '反对' ? '❌' : '⚖️';
-    statusEl.textContent = icon + ' ' + d.group_vote;
-    statusEl.style.color = d.group_vote === '支持' ? 'var(--green)' : d.group_vote === '反对' ? 'var(--red)' : 'var(--yellow)';
-  }
+  if (resultEl) { resultEl.style.display = 'block'; const icon = d.group_vote === '支持' ? '✅' : d.group_vote === '反对' ? '❌' : '⚖️'; resultEl.innerHTML = icon + ' ' + d.group_name + ' 共识: <strong>' + d.group_vote + '</strong>'; }
+  const badge = document.getElementById('badge-' + d.group_id); if (badge) badge.className = 'group-badge done';
+  const statusEl = document.getElementById('tracker-status-' + d.group_id);
+  if (statusEl) { const icon = d.group_vote === '支持' ? '✅' : d.group_vote === '反对' ? '❌' : '⚖️'; statusEl.textContent = icon + ' ' + d.group_vote; statusEl.style.color = d.group_vote === '支持' ? 'var(--green)' : d.group_vote === '反对' ? 'var(--red)' : 'var(--yellow)'; }
 }
 
+// ==================== FINAL ====================
 function handleFinalAnswer(d) {
+  debateCompletedData = d;
+  let totalSup = 0, totalAgainst = 0, totalNeutral = 0;
+  d.groups_summary.forEach(g => { g.members.forEach(m => { if (m.vote === '支持') totalSup++; else if (m.vote === '反对') totalAgainst++; else totalNeutral++; }); });
+  const total = totalSup + totalAgainst + totalNeutral || 1;
+  const supPct = (totalSup / total * 100).toFixed(0), againstPct = (totalAgainst / total * 100).toFixed(0), neutralPct = (totalNeutral / total * 100).toFixed(0);
   const area = document.getElementById('debateArea');
 
-  let votesHtml = '<div style="margin-bottom:20px;"><h3 style="color:var(--yellow);margin-bottom:10px;font-size:14px;">📊 投票结果</h3>';
+  const statsCard = document.createElement('div'); statsCard.className = 'stats-summary';
+  statsCard.innerHTML = '<div class="stats-title">📊 AI 投票统计 <span style="font-size:12px;color:var(--text2);font-weight:400;">(' + total + ' 位角色)</span></div>' +
+    '<div class="stats-grid"><div class="stat-item"><div class="stat-number green">' + totalSup + '</div><div class="stat-label">👍 支持</div></div>' +
+    '<div class="stat-item"><div class="stat-number red">' + totalAgainst + '</div><div class="stat-label">👎 反对</div></div>' +
+    '<div class="stat-item"><div class="stat-number yellow">' + totalNeutral + '</div><div class="stat-label">🤔 中立</div></div></div>' +
+    '<div class="stats-bar-container"><div class="stats-bar-sup" style="width:' + supPct + '%"></div><div class="stats-bar-against" style="width:' + againstPct + '%"></div><div class="stats-bar-neutral" style="width:' + neutralPct + '%"></div></div>' +
+    '<div class="stats-bar-labels"><span>👍 ' + totalSup + ' (' + supPct + '%)</span><span>👎 ' + totalAgainst + ' (' + againstPct + '%)</span><span>🤔 ' + totalNeutral + ' (' + neutralPct + '%)</span></div>';
+  area.appendChild(statsCard);
+
   d.groups_summary.forEach(g => {
-    votesHtml += '<div style="margin-bottom:8px;font-size:13px;"><strong>' + g.name + ':</strong> ';
-    g.members.forEach(m => {
-      const cls = m.vote === '支持' ? 'sup' : m.vote === '反对' ? 'against' : 'neutral';
-      votesHtml += '<span class="vote-tag ' + cls + '" style="margin-right:4px;">' + m.emoji + ' ' + m.name + '=' + m.vote + '</span>';
-    });
-    votesHtml += ' → 共识: <strong>' + g.vote + '</strong></div>';
+    const card = document.createElement('div'); card.className = 'group-result'; card.style.cssText = 'display:block;margin:8px 0 0;';
+    const icon = g.vote === '支持' ? '✅' : g.vote === '反对' ? '❌' : '⚖️';
+    const membersHtml = g.members.map(m => { const c = m.vote === '支持' ? 'sup' : m.vote === '反对' ? 'against' : 'neutral'; return '<span class="vote-tag ' + c + '" style="margin-right:4px;">' + m.emoji + ' ' + m.name + '=' + m.vote + '</span>'; }).join('');
+    card.innerHTML = icon + ' <strong>' + g.name + '</strong>：' + membersHtml + ' → 共识: <strong>' + g.vote + '</strong>';
+    area.appendChild(card);
   });
-  votesHtml += '</div>';
 
-  const card = document.createElement('div');
-  card.className = 'final-card';
-  card.innerHTML =
-    '<div class="final-title">🎯 主策划最终总结</div>' +
+  const finalCard = document.createElement('div'); finalCard.className = 'final-card';
+  finalCard.innerHTML = '<div class="final-title">🎯 主策划最终总结</div>' +
     '<div class="final-content">' + formatContent(d.summary) + '</div>' +
-    votesHtml;
-  area.appendChild(card);
+    '<div class="export-area">' +
+    '<button class="btn-export" onclick="exportDebate(\'md\')">📄 导出 Markdown</button>' +
+    '<button class="btn-export" onclick="exportDebate(\'txt\')">📝 导出 TXT</button></div>';
+  area.appendChild(finalCard);
+  scrollToBottom();
 }
 
-function addPhaseBanner(text) {
-  const content = document.getElementById('debateContent');
-  const existing = content.querySelector('.phase-banner');
-  if (existing) existing.remove();
-  const banner = document.createElement('div');
-  banner.className = 'phase-banner';
-  banner.textContent = text;
-  content.insertBefore(banner, content.firstChild);
+// ==================== USER VOTE ====================
+function showUserVotePanel() {
+  const panel = document.getElementById('userVotePanel');
+  panel.style.display = 'block';
+  userVoteSubmitted = false; userVoteChoice = null;
+  ['Sup','Against','Neutral'].forEach(c => { const b = document.getElementById('uv' + c); if (b) b.classList.remove('selected','sup','against','neutral'); });
+  document.getElementById('uvReason').style.display = 'none';
+  const sb = document.getElementById('uvSubmit'); if (sb) { sb.style.display = 'none'; sb.classList.remove('submitted'); sb.textContent = '提交我的投票'; }
+  const rv = document.getElementById('uvResult'); if (rv) rv.style.display = 'none';
 }
 
-function addStatus(text, type) {
-  const area = document.getElementById('statusArea');
-  const item = document.createElement('div');
-  item.className = 'status-item ' + (type === 'active' ? 'active' : type === 'done' ? 'done' : '');
-  const dot = type === 'active' ? '<div class="spinner"></div>' : '<div class="status-dot"></div>';
-  item.innerHTML = dot + text;
-  area.appendChild(item);
+function selectUserVote(choice) {
+  if (userVoteSubmitted) return;
+  userVoteChoice = choice;
+  ['Sup','Against','Neutral'].forEach(c => { const b = document.getElementById('uv' + c); if (b) b.classList.remove('selected','sup','against','neutral'); });
+  const cls = choice === '支持' ? 'sup' : choice === '反对' ? 'against' : 'neutral';
+  const btn = document.getElementById(choice === '支持' ? 'uvSup' : choice === '反对' ? 'uvAgainst' : 'uvNeutral');
+  if (btn) btn.classList.add('selected', cls);
+  document.getElementById('uvReason').style.display = 'block';
+  const sb = document.getElementById('uvSubmit'); if (sb) sb.style.display = 'block';
 }
 
-function showError(msg) {
+function submitUserVote() {
+  if (!userVoteChoice || userVoteSubmitted) return;
+  userVoteSubmitted = true;
+  userVoteReason = (document.getElementById('uvReasonText') && document.getElementById('uvReasonText').value) || '';
+  const sb = document.getElementById('uvSubmit');
+  if (sb) { sb.classList.add('submitted'); sb.textContent = '✅ 已提交'; }
+  const rv = document.getElementById('uvResult');
+  if (rv) { rv.style.display = 'block'; rv.innerHTML = '你的投票：<strong>' + userVoteChoice + '</strong>（' + userVoteReason.substring(0, 60) + ')'; }
+  if (debateCompletedData && userVoteChoice) showUserVsAIComparison();
+}
+
+function showUserVsAIComparison() {
+  if (!debateCompletedData || !userVoteChoice) return;
   const area = document.getElementById('debateArea');
-  const err = document.createElement('div');
-  err.style = 'background:rgba(248,113,113,0.1);border:1px solid var(--red);border-radius:12px;padding:16px;color:var(--red);margin:8px;';
-  err.textContent = '错误: ' + msg;
-  area.appendChild(err);
+  let totalSup = 0, totalAgainst = 0, totalNeutral = 0, aiMajority = '';
+  debateCompletedData.groups_summary.forEach(g => {
+    g.members.forEach(m => { if (m.vote === '支持') totalSup++; else if (m.vote === '反对') totalAgainst++; else totalNeutral++; });
+  });
+  const total = totalSup + totalAgainst + totalNeutral || 1;
+  if (totalSup >= totalAgainst && totalSup >= totalNeutral) aiMajority = '支持';
+  else if (totalAgainst >= totalSup && totalAgainst >= totalNeutral) aiMajority = '反对';
+  else aiMajority = '中立';
+
+  const card = document.createElement('div'); card.className = 'comparison-card';
+  const userCls = userVoteChoice === '支持' ? 'sup' : userVoteChoice === '反对' ? 'against' : 'neutral';
+  const aiCls = aiMajority === '支持' ? 'sup' : aiMajority === '反对' ? 'against' : 'neutral';
+  const agree = userVoteChoice === aiMajority;
+  card.innerHTML =
+    '<div class="comparison-title">⚖️ 人机投票对比</div>' +
+    '<div class="comparison-row"><span class="comparison-label">🤖 AI</span><span class="comparison-badge ' + aiCls + '">' + aiMajority + ' (' + ((aiMajority === '支持' ? totalSup : aiMajority === '反对' ? totalAgainst : totalNeutral) / total * 100).toFixed(0) + '%)</span></div>' +
+    '<div class="comparison-row"><span class="comparison-label">👤 你</span><span class="comparison-badge ' + userCls + ' user">' + userVoteChoice + '</span></div>' +
+    '<div class="comparison-row" style="border:none;padding-top:10px;">' +
+    '<span class="comparison-label"></span>' +
+    '<span style="font-size:13px;color:' + (agree ? 'var(--green)' : 'var(--yellow)') + ';font-weight:700;">' + (agree ? '🎉 你与 AI 大多数立场一致！' : '🤔 你与 AI 大多数立场不同，思考一下差异在哪里？') + '</span>' +
+    '</div>';
+  area.appendChild(card);
+  scrollToBottom();
 }
 
-function resetUI() {
-  const analyzeBtn = document.getElementById('analyzeBtn');
-  if (analyzeBtn) analyzeBtn.disabled = false;
-  const startDebateBtn = document.getElementById('startDebateBtn');
-  if (startDebateBtn) startDebateBtn.disabled = false;
-  const topicInput = document.getElementById('topicInput');
-  if (topicInput) topicInput.disabled = false;
+// ==================== EXPORT ====================
+function exportDebate(format) {
+  if (!debateCompletedData) return;
+  const d = debateCompletedData;
+  let text = '';
+  if (format === 'md') {
+    text = '# ' + d.topic + '\n\n';
+    text += '## AI 投票统计\n';
+    let totalSup = 0, totalAgainst = 0, totalNeutral = 0;
+    d.groups_summary.forEach(g => { g.members.forEach(m => { if (m.vote === '支持') totalSup++; else if (m.vote === '反对') totalAgainst++; else totalNeutral++; }); });
+    const total = totalSup + totalAgainst + totalNeutral || 1;
+    text += '- 👍 支持: ' + totalSup + ' (' + (totalSup / total * 100).toFixed(0) + '%)\n';
+    text += '- 👎 反对: ' + totalAgainst + ' (' + (totalAgainst / total * 100).toFixed(0) + '%)\n';
+    text += '- 🤔 中立: ' + totalNeutral + ' (' + (totalNeutral / total * 100).toFixed(0) + '%)\n\n';
+    text += '## 各组投票结果\n';
+    d.groups_summary.forEach(g => {
+      text += '### ' + g.name + '\n';
+      g.members.forEach(m => { text += '- ' + m.emoji + ' ' + m.name + ': **' + m.vote + '**\n'; });
+      text += '> 共识: **' + g.vote + '**\n\n';
+    });
+    if (userVoteChoice) {
+      text += '## 用户投票\n';
+      text += '- 👤 用户立场: **' + userVoteChoice + '**';
+      if (userVoteReason) text += '\n- 📝 理由: ' + userVoteReason;
+      text += '\n\n';
+    }
+    text += '## 主策划总结\n\n' + d.summary + '\n';
+  } else {
+    text = d  } else {
+    text = d.topic + '\n\nAI 投票统计：\n';
+    let totalSup = 0, totalAgainst = 0, totalNeutral = 0;
+    d.groups_summary.forEach(g => { g.members.forEach(m => { if (m.vote === '支持') totalSup++; else if (m.vote === '反对') totalAgainst++; else totalNeutral++; }); });
+    const total = totalSup + totalAgainst + totalNeutral || 1;
+    text += '支持: ' + totalSup + ' (' + (totalSup / total * 100).toFixed(0) + '%)\n';
+    text += '反对: ' + totalAgainst + ' (' + (totalAgainst / total * 100).toFixed(0) + '%)\n';
+    text += '中立: ' + totalNeutral + ' (' + (totalNeutral / total * 100).toFixed(0) + '%)\n\n';
+    d.groups_summary.forEach(g => {
+      text += g.name + ' 共识: ' + g.vote + '\n';
+      g.members.forEach(m => { text += '  ' + m.emoji + ' ' + m.name + ': ' + m.vote + '\n'; });
+    });
+    if (userVoteChoice) { text += '\n用户投票: ' + userVoteChoice + (userVoteReason ? ' | ' + userVoteReason : ''); }
+    text += '\n\n主策划总结：\n' + d.summary;
+  }
+  const blob = new Blob([text], { type: format === 'md' ? 'text/markdown' : 'text/plain' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a'); a.href = url; a.download = '辩论报告_' + Date.now() + '.' + (format === 'md' ? 'md' : 'txt'); a.click();
+  URL.revokeObjectURL(url);
 }
 
-function stopDebate() {
-  if (evtSource) { evtSource.close(); evtSource = null; }
-  isRunning = false;
-
-  // Remove any stuck spinners
-  document.querySelectorAll('.spinner').forEach(s => s.remove());
-
-  // Reset vote tracker
-  const vt = document.getElementById('voteTrackerTop');
-  if (vt) vt.style.display = 'none';
-  const vg = document.getElementById('voteTrackerGroups');
-  if (vg) vg.innerHTML = '';
-
-  addStatus('已停止', '');
-  const st = document.getElementById('statusText');
-  if (st) st.textContent = '已停止';
-  resetUI();
-}
-
+// ==================== UTILS ====================
 function formatContent(text) {
   if (!text) return '';
   text = text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
@@ -1224,220 +961,144 @@ function formatContent(text) {
   return '<p style="margin:6px 0;">' + text + '</p>';
 }
 
-// ============ Settings / API Config ============
+function scrollToBottom() {
+  const area = document.getElementById('debateArea');
+  if (area) area.scrollTop = area.scrollHeight;
+}
 
-let settingsProviders = {};
-let settingsCurrentProvider = 'minimax';
-let settingsCurrentConfig = {};
+function hexToRgb(hex) {
+  hex = hex.replace('#', '');
+  const r = parseInt(hex.substring(0, 2), 16) || 128;
+  const g = parseInt(hex.substring(2, 4), 16) || 128;
+  const b = parseInt(hex.substring(4, 6), 16) || 128;
+  return r + ',' + g + ',' + b;
+}
+
+function addPhaseBanner(text) {
+  const content = document.getElementById('debateContent');
+  const existing = content.querySelector('.phase-banner');
+  if (existing) existing.remove();
+  const banner = document.createElement('div'); banner.className = 'phase-banner'; banner.textContent = text;
+  content.insertBefore(banner, content.firstChild);
+}
+
+function addStatus(text, type) {
+  const area = document.getElementById('statusArea');
+  const item = document.createElement('div');
+  item.className = 'status-item' + (type === 'active' ? ' active' : type === 'done' ? ' done' : '');
+  const dot = type === 'active' ? '<div class="spinner"></div>' : '<div class="status-dot"></div>';
+  item.innerHTML = dot + text;
+  area.appendChild(item);
+  area.scrollTop = area.scrollHeight;
+}
+
+function showError(msg) {
+  const area = document.getElementById('debateArea');
+  const err = document.createElement('div');
+  err.style = 'background:rgba(248,113,113,0.1);border:1px solid var(--red);border-radius:12px;padding:16px;color:var(--red);margin:8px;';
+  err.textContent = '错误: ' + msg; area.appendChild(err);
+}
+
+function resetUI() {
+  const btns = ['analyzeBtn', 'startDebateBtn'];
+  btns.forEach(id => { const b = document.getElementById(id); if (b) b.disabled = false; });
+  const ti = document.getElementById('topicInput'); if (ti) ti.disabled = false;
+}
+
+function stopDebate() {
+  if (evtSource) { evtSource.close(); evtSource = null; }
+  isRunning = false;
+  document.querySelectorAll('.spinner').forEach(s => s.remove());
+  const vt = document.getElementById('voteTrackerTop'); if (vt) { vt.style.display = 'none'; vt.innerHTML = ''; }
+  addStatus('已停止', '');
+}
+
+// ==================== SETTINGS ====================
+let settingsProviders = {}, settingsCurrentProvider = 'minimax', settingsCurrentConfig = {};
 
 async function openSettings() {
-  const overlay = document.getElementById('settingsOverlay');
-  overlay.classList.add('open');
-
-  // Load current config from server
+  const overlay = document.getElementById('settingsOverlay'); overlay.classList.add('open');
   try {
-    const resp = await fetch('/api/config');
-    const data = await resp.json();
-    settingsProviders = data.providers || {};
-    settingsCurrentConfig = data;
-    settingsCurrentProvider = data.provider || 'minimax';
-
-    renderProviderGrid();
-    renderProviderFields(settingsCurrentProvider, data);
-    updateApiBadge(data);
-  } catch (e) {
-    console.error('Failed to load config:', e);
-  }
+    const resp = await fetch('/api/config'); const data = await resp.json();
+    settingsProviders = data.providers || {}; settingsCurrentConfig = data; settingsCurrentProvider = data.provider || 'minimax';
+    renderProviderGrid(); renderProviderFields(settingsCurrentProvider, data); updateApiBadge(data);
+  } catch (e) { console.error('Failed to load config:', e); }
 }
 
-function closeSettings() {
-  document.getElementById('settingsOverlay').classList.remove('open');
-}
+function closeSettings() { document.getElementById('settingsOverlay').classList.remove('open'); }
 
 function updateApiBadge(data) {
   const badge = document.getElementById('apiStatusBadge');
   if (!badge) return;
   if (data.configured) {
     badge.textContent = '✅ ' + (settingsProviders[data.provider]?.name || data.provider);
-    badge.style.background = 'rgba(74,222,128,0.15)';
-    badge.style.color = 'var(--green)';
-    badge.style.borderColor = 'var(--green)';
-    badge.style.cursor = 'default';
-    badge.removeAttribute('onclick');
+    badge.classList.add('ok'); badge.removeAttribute('onclick');
   } else {
-    badge.textContent = '⚠️ 未配置';
-    badge.style.background = 'rgba(248,113,113,0.15)';
-    badge.style.color = 'var(--red)';
-    badge.style.borderColor = 'var(--red)';
-    badge.style.cursor = 'pointer';
-    badge.setAttribute('onclick', 'openSettings()');
+    badge.textContent = '⚠️ 未配置'; badge.classList.remove('ok'); badge.setAttribute('onclick', 'openSettings()');
   }
 }
 
 function renderProviderGrid() {
-  const icons = {
-    minimax: '🔬', deepseek: '🔵', openai: '⚡', anthropic: '🧠',
-    google: '🌐', mistral: '🌬️', cohere: '🌀', together: '🤝',
-    huggingface: '🤗', novita: '🚀', azure: '☁️', groq: '⚡',
-    openrouter: '🌍',
-  };
-  const grid = document.getElementById('providerGrid');
-  grid.innerHTML = '';
-  Object.entries(settingsProviders).forEach(([id, p]) => {
+  const icons = { minimax:'🔬', deepseek:'🔵', openai:'⚡', anthropic:'🧠', google:'🌐', mistral:'🌬️', cohere:'🌀', together:'🤝', huggingface:'🤗', novita:'🚀', azure:'☁️', groq:'⚡', openrouter:'🌍' };
+  const grid = document.getElementById('providerGrid'); grid.innerHTML = '';
+  Object.entries(settingsProviders).forEach(([id, p], i) => {
     const btn = document.createElement('div');
     btn.className = 'provider-btn' + (id === settingsCurrentProvider ? ' selected' : '');
-    btn.innerHTML = `<span class="picon">${icons[id] || '📡'}</span><span>${p.name}</span>`;
-    btn.onclick = () => selectProvider(id);
+    btn.innerHTML = '<span class="picon">' + (icons[id] || '📡') + '</span><span>' + p.name + '</span>';
+    btn.onclick = () => { settingsCurrentProvider = id; renderProviderFields(id, {}); document.querySelectorAll('.provider-btn').forEach((b, j) => { b.classList.toggle('selected', j === i); }); };
     grid.appendChild(btn);
   });
 }
 
-function selectProvider(id) {
-  settingsCurrentProvider = id;
-  document.querySelectorAll('.provider-btn').forEach(b => b.classList.remove('selected'));
-  document.querySelector(`.provider-btn:nth-child(${Object.keys(settingsProviders).indexOf(id)+1})`).classList.add('selected');
-  renderProviderFields(id, {});
-}
-
 function renderProviderFields(providerId, data) {
-  const meta = settingsProviders[providerId];
-  const container = document.getElementById('settingsFields');
+  const meta = settingsProviders[providerId]; const container = document.getElementById('settingsFields');
   if (!meta) return;
-
-  // Get current values from data or use defaults
-  const currentKey = data.api_key || data.key_set ? '••••••••' : '';
-  const currentUrl = data.base_url || meta.url_default || '';
-  const currentModel = data.model || meta.models?.[0]?.id || '';
-
-  const modelsHtml = (meta.models || []).map(m =>
-    `<option value="${m.id}"${m.id === currentModel ? ' selected' : ''}>${m.name}</option>`
-  ).join('');
-
-  container.innerHTML = `
-    <div class="settings-field">
-      <label>🔑 API Key</label>
-      <input type="password" id="cfgApiKey" placeholder="输入你的 API Key" value="${currentKey}" autocomplete="off" />
-    </div>
-    <div class="settings-field">
-      <label>🌐 ${meta.url_label || 'API 地址'}</label>
-      <input type="text" id="cfgBaseUrl" placeholder="${meta.url_placeholder || meta.url_default}" value="${currentUrl}" />
-    </div>
-    <div class="settings-field">
-      <label>🤖 模型</label>
-      <select id="cfgModel">${modelsHtml}</select>
-      <div class="settings-hint">选择该提供商下的模型</div>
-    </div>
-  `;
+  const currentKey = data.api_key || ''; const currentUrl = data.base_url || meta.url_default || ''; const currentModel = data.model || meta.models?.[0]?.id || '';
+  const modelsHtml = (meta.models || []).map(m => '<option value="' + m.id + '"' + (m.id === currentModel ? ' selected' : '') + '>' + m.name + '</option>').join('');
+  container.innerHTML =
+    '<div class="settings-field"><label>🔑 API Key</label><input type="password" id="cfgApiKey" placeholder="输入你的 API Key" value="' + currentKey + '" autocomplete="off" /></div>' +
+    '<div class="settings-field"><label>🌐 API 地址</label><input type="text" id="cfgBaseUrl" placeholder="' + (meta.url_placeholder || meta.url_default) + '" value="' + currentUrl + '" /></div>' +
+    '<div class="settings-field"><label>🤖 模型</label><select id="cfgModel">' + modelsHtml + '</select><div class="settings-hint">选择该提供商下的模型</div></div>';
 }
 
 async function testApiConfig() {
-  const result = document.getElementById('settingsTestResult');
-  result.className = 'testing';
-  result.textContent = '🔄 测试中...';
-  result.style.display = 'block';
-
-  const apiKey = document.getElementById('cfgApiKey').value.trim();
-  const baseUrl = document.getElementById('cfgBaseUrl').value.trim();
-  const model = document.getElementById('cfgModel').value;
-
-  if (!apiKey || apiKey === '••••••••') {
-    result.className = 'fail';
-    result.textContent = '❌ 请先输入 API Key';
-    return;
-  }
-
+  const result = document.getElementById('settingsTestResult'); const testBtn = document.getElementById('testBtn');
+  result.className = 'testing'; result.textContent = '🔄 测试中...'; result.style.display = 'block';
+  const apiKey = document.getElementById('cfgApiKey').value.trim(); const baseUrl = document.getElementById('cfgBaseUrl').value.trim(); const model = document.getElementById('cfgModel').value;
+  if (!apiKey) { result.className = 'fail'; result.textContent = '❌ 请先输入 API Key'; return; }
   try {
-    const resp = await fetch('/api/config/test', {
-      method: 'POST',
-      headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({
-        provider: settingsCurrentProvider,
-        api_key: apiKey,
-        base_url: baseUrl,
-        model: model,
-      })
-    });
+    const resp = await fetch('/api/config/test', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({ provider: settingsCurrentProvider, api_key: apiKey, base_url: baseUrl, model })});
     const data = await resp.json();
-    if (data.success) {
-      result.className = 'ok';
-      result.textContent = '✅ 连接成功！响应: ' + data.message;
-    } else {
-      result.className = 'fail';
-      result.textContent = '❌ 连接失败: ' + data.message;
-    }
-  } catch (e) {
-    result.className = 'fail';
-    result.textContent = '❌ 网络错误: ' + e.message;
-  }
+    if (data.success) { result.className = 'ok'; result.textContent = '✅ 连接成功！响应: ' + data.message; }
+    else { result.className = 'fail'; result.textContent = '❌ 连接失败: ' + data.message; }
+  } catch (e) { result.className = 'fail'; result.textContent = '❌ 网络错误: ' + e.message; }
 }
 
 async function saveApiConfig() {
-  const saveBtn = document.getElementById('saveBtn');
-  const result = document.getElementById('settingsTestResult');
-  saveBtn.disabled = true;
-  saveBtn.textContent = '保存中...';
-
-  const apiKey = document.getElementById('cfgApiKey').value.trim();
-  const baseUrl = document.getElementById('cfgBaseUrl').value.trim();
-  const model = document.getElementById('cfgModel').value;
-
-  // If key shown as placeholder, don't change it (keep existing)
-  const finalKey = (apiKey === '••••••••' || !apiKey)
-    ? settingsCurrentConfig.api_key || ''
-    : apiKey;
-  const finalUrl = baseUrl || (settingsProviders[settingsCurrentProvider]?.url_default || '');
-
+  const saveBtn = document.getElementById('saveBtn'); const result = document.getElementById('settingsTestResult');
+  saveBtn.disabled = true; saveBtn.textContent = '保存中...';
+  const apiKey = document.getElementById('cfgApiKey').value.trim(); const baseUrl = document.getElementById('cfgBaseUrl').value.trim(); const model = document.getElementById('cfgModel').value;
+  const finalKey = apiKey || settingsCurrentConfig.api_key || '';
   try {
-    const resp = await fetch('/api/config', {
-      method: 'POST',
-      headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({
-        provider: settingsCurrentProvider,
-        api_key: finalKey,
-        base_url: finalUrl,
-        model: model,
-      })
-    });
+    const resp = await fetch('/api/config', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({ provider: settingsCurrentProvider, api_key: finalKey, base_url: baseUrl, model })});
     const data = await resp.json();
-
     if (data.success) {
-      settingsCurrentConfig = {
-        ...settingsCurrentConfig,
-        provider: settingsCurrentProvider,
-        model: model,
-        configured: true,
-      };
+      settingsCurrentConfig = { ...settingsCurrentConfig, provider: settingsCurrentProvider, model, configured: true };
       updateApiBadge(settingsCurrentConfig);
-      result.className = 'ok';
-      result.textContent = '✅ 设置已保存，正在使用 ' + (settingsProviders[settingsCurrentProvider]?.name || settingsCurrentProvider) + ' / ' + model;
+      result.className = 'ok'; result.textContent = '✅ 设置已保存，正在使用 ' + (settingsProviders[settingsCurrentProvider]?.name || settingsCurrentProvider) + ' / ' + model;
       setTimeout(closeSettings, 1200);
-    } else {
-      result.className = 'fail';
-      result.textContent = '❌ 保存失败';
-    }
-  } catch (e) {
-    result.className = 'fail';
-    result.textContent = '❌ 保存失败: ' + e.message;
-  } finally {
-    saveBtn.disabled = false;
-    saveBtn.textContent = '💾 保存设置';
-  }
+    } else { result.className = 'fail'; result.textContent = '❌ 保存失败'; }
+  } catch (e) { result.className = 'fail'; result.textContent = '❌ 保存失败: ' + e.message; }
+  finally { saveBtn.disabled = false; saveBtn.textContent = '💾 保存设置'; }
 }
 
-// ============ Init ============
-
-// Load config on page load
+// Init
 (async function initSettings() {
   try {
-    const resp = await fetch('/api/config');
-    const data = await resp.json();
-    settingsProviders = data.providers || {};
-    settingsCurrentConfig = data;
-    settingsCurrentProvider = data.provider || 'minimax';
+    const resp = await fetch('/api/config'); const data = await resp.json();
+    settingsProviders = data.providers || {}; settingsCurrentConfig = data; settingsCurrentProvider = data.provider || 'minimax';
     updateApiBadge(data);
-  } catch (e) {
-    console.error('Failed to load config on init:', e);
-  }
+  } catch (e) { console.error('Failed to load config on init:', e); }
 })();
 </script>
 </body>

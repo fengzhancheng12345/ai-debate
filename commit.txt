@@ -1,0 +1,25 @@
+feat: 全面升级辩论系统 v2.0
+
+安全修复:
+- 移除 agents.py 中硬编码的 DeepSeek API Key，改为环境变量
+- API Key 全部通过环境变量读取 (MINIMAX_API_KEY, DEEPSEEK_API_KEY)
+- CORS 配置改为可配置（默认仅本地），禁止生产环境 wildcard
+
+新增功能:
+- moderation.py: 话题审核模块，过滤政治/暴力/违法/色情话题
+- 实时投票监控条: 辩论期间顶部 sticky 显示各组投票进度柱状图
+- 用户投票: 辩论结束后用户可投票，与 AI 立场对比
+- 人机对比卡片: 用户 vs AI 多数立场对比展示
+- 投票统计总览: 支持/反对/中立三栏统计 + 可视化柱状
+- 报告导出: 支持 Markdown / TXT 两种格式下载
+- 辩论完成后生成最终总结
+
+UI 改进:
+- 全新深色主题，渐变按钮，圆角卡片，动画反馈
+- 欢迎页展示功能介绍，增强新用户引导
+- 研究数据抓取过程可视化展示
+
+文档:
+- README.md: 项目介绍、快速开始、API Provider 表格
+- requirements.txt: 依赖清单
+- .env.example: 环境变量配置示例
