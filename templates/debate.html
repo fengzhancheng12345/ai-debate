@@ -936,7 +936,6 @@ function exportDebate(format) {
     }
     text += '## 主策划总结\n\n' + d.summary + '\n';
   } else {
-    text = d  } else {
     text = d.topic + '\n\nAI 投票统计：\n';
     let totalSup = 0, totalAgainst = 0, totalNeutral = 0;
     d.groups_summary.forEach(g => { g.members.forEach(m => { if (m.vote === '支持') totalSup++; else if (m.vote === '反对') totalAgainst++; else totalNeutral++; }); });
