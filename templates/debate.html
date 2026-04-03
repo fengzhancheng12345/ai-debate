@@ -428,13 +428,198 @@ body {
 @keyframes spin { to { transform: rotate(360deg); } }
 @keyframes fadeSlide { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
 @keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.3; } }
+
+/* ============ Settings Modal ============ */
+#settingsOverlay {
+  display: none;
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.7);
+  z-index: 1000;
+  align-items: center;
+  justify-content: center;
+}
+#settingsOverlay.open { display: flex; }
+
+#settingsModal {
+  background: var(--bg2);
+  border: 1px solid var(--border);
+  border-radius: 20px;
+  width: 480px;
+  max-width: 95vw;
+  max-height: 90vh;
+  overflow-y: auto;
+  animation: fadeSlide 0.25s ease;
+  box-shadow: 0 20px 60px rgba(0,0,0,0.5);
+}
+
+.settings-header {
+  padding: 20px 24px 16px;
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.settings-header h2 { font-size: 17px; color: var(--accent); }
+.settings-header h2 span { font-size: 13px; color: var(--text2); font-weight: 400; margin-left: 8px; }
+
+#settingsClose {
+  background: none;
+  border: none;
+  color: var(--text2);
+  font-size: 22px;
+  cursor: pointer;
+  padding: 0 4px;
+  line-height: 1;
+}
+#settingsClose:hover { color: var(--text); }
+
+.settings-body { padding: 20px 24px; }
+
+.settings-provider-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+  margin-bottom: 20px;
+}
+.provider-btn {
+  background: var(--bg3);
+  border: 2px solid var(--border);
+  border-radius: 12px;
+  padding: 10px 8px;
+  text-align: center;
+  cursor: pointer;
+  transition: all 0.2s;
+  color: var(--text2);
+  font-size: 13px;
+}
+.provider-btn:hover { border-color: var(--accent); color: var(--text); }
+.provider-btn.selected { border-color: var(--accent); background: rgba(108,99,255,0.15); color: var(--accent); }
+
+.settings-field { margin-bottom: 14px; }
+.settings-field label {
+  display: block;
+  font-size: 12px;
+  color: var(--text2);
+  margin-bottom: 6px;
+  font-weight: 500;
+}
+.settings-field input,
+.settings-field select {
+  width: 100%;
+  background: var(--bg3);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  color: var(--text);
+  padding: 9px 12px;
+  font-size: 14px;
+  outline: none;
+  transition: border-color 0.2s;
+  box-sizing: border-box;
+}
+.settings-field input:focus,
+.settings-field select:focus { border-color: var(--accent); }
+.settings-field input::placeholder { color: var(--text2); opacity: 0.6; }
+
+.settings-hint {
+  font-size: 11px;
+  color: var(--text2);
+  margin-top: 4px;
+}
+
+.settings-actions {
+  display: flex;
+  gap: 10px;
+  margin-top: 20px;
+  padding-top: 16px;
+  border-top: 1px solid var(--border);
+}
+.btn-test {
+  flex: 1;
+  padding: 10px;
+  background: var(--bg3);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  color: var(--text);
+  font-size: 14px;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+.btn-test:hover { border-color: var(--accent); color: var(--accent); }
+.btn-save {
+  flex: 2;
+  padding: 10px;
+  background: var(--accent);
+  border: none;
+  border-radius: 10px;
+  color: white;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: opacity 0.2s;
+}
+.btn-save:hover { opacity: 0.85; }
+.btn-save:disabled { opacity: 0.4; cursor: not-allowed; }
+
+#settingsTestResult {
+  margin-top: 12px;
+  padding: 10px 14px;
+  border-radius: 10px;
+  font-size: 13px;
+  display: none;
+  word-break: break-all;
+}
+#settingsTestResult.ok { display: block; background: rgba(74,222,128,0.1); border: 1px solid var(--green); color: var(--green); }
+#settingsTestResult.fail { display: block; background: rgba(248,113,113,0.1); border: 1px solid var(--red); color: var(--red); }
+#settingsTestResult.testing { display: block; background: rgba(251,191,36,0.1); border: 1px solid var(--yellow); color: var(--yellow); }
 </style>
 </head>
 <body>
 
 <div class="header">
   <h1>🤖 AI 辩论系统</h1>
-  <div class="status" id="statusText">就绪 — 输入话题开始辩论</div>
+  <div id="apiStatusBadge" style="font-size:11px;padding:3px 10px;border-radius:20px;background:rgba(248,113,113,0.15);color:var(--red);border:1px solid var(--red);cursor:pointer;margin-left:8px;" onclick="openSettings()" title="点击配置 API">⚠️ 未配置</div>
+  <div class="status" id="statusText" style="margin-left:auto;">就绪 — 输入话题开始辩论</div>
+  <button onclick="openSettings()" style="background:none;border:1px solid var(--border);color:var(--text2);padding:5px 12px;border-radius:8px;cursor:pointer;font-size:13px;display:flex;align-items:center;gap:6px;flex-shrink:0;" title="API 设置">⚙️ 设置</button>
+</div>
+
+<!-- Settings Modal -->
+<div id="settingsOverlay" onclick="if(event.target===this)closeSettings()">
+  <div id="settingsModal" onclick="event.stopPropagation()">
+    <div class="settings-header">
+      <h2>⚙️ API 设置 <span>v2.0</span></h2>
+      <button id="settingsClose" onclick="closeSettings()">&times;</button>
+    </div>
+    <div class="settings-body">
+      <div style="font-size:12px;color:var(--text2);margin-bottom:14px;">选择 AI 服务提供商，填入你的 API Key。Key 只保存在本地浏览器中。</div>
+
+      <!-- Provider selection -->
+      <div style="margin-bottom:16px;">
+        <div style="font-size:12px;color:var(--text2);margin-bottom:8px;font-weight:500;">服务提供商</div>
+        <div class="settings-provider-grid" id="providerGrid"></div>
+      </div>
+
+      <!-- Dynamic fields -->
+      <div id="settingsFields"></div>
+
+      <div id="settingsTestResult"></div>
+
+      <div class="settings-actions">
+        <button class="btn-test" id="testBtn" onclick="testApiConfig()">🔬 测试连接</button>
+        <button class="btn-save" id="saveBtn" onclick="saveApiConfig()">💾 保存设置</button>
+      </div>
+
+      <div style="margin-top:14px;padding:10px 12px;background:var(--bg3);border-radius:10px;font-size:11px;color:var(--text2);line-height:1.7;">
+        💡 <strong style="color:var(--text);">隐私说明</strong>：API Key 仅存储在当前浏览器本地存储中，不会发送到 GitHub 或任何第三方服务器。
+        <br>🔑 <strong style="color:var(--text);">获取 Key</strong>：
+        <a href="https://platform.minimax.io" target="_blank" style="color:var(--accent);">MiniMax</a> ·
+        <a href="https://platform.deepseek.com" target="_blank" style="color:var(--accent);">DeepSeek</a> ·
+        <a href="https://platform.openai.com" target="_blank" style="color:var(--accent);">OpenAI</a> ·
+        <a href="https://console.groq.com" target="_blank" style="color:var(--accent);">Groq</a> ·
+        <a href="https://openrouter.ai/keys" target="_blank" style="color:var(--accent);">OpenRouter</a>
+      </div>
+    </div>
+  </div>
 </div>
 
 <div class="main">
@@ -1024,6 +1209,216 @@ function formatContent(text) {
   text = text.replace(/\n/g, '<br>');
   return '<p style="margin:6px 0;">' + text + '</p>';
 }
+
+// ============ Settings / API Config ============
+
+let settingsProviders = {};
+let settingsCurrentProvider = 'minimax';
+let settingsCurrentConfig = {};
+
+async function openSettings() {
+  const overlay = document.getElementById('settingsOverlay');
+  overlay.classList.add('open');
+
+  // Load current config from server
+  try {
+    const resp = await fetch('/api/config');
+    const data = await resp.json();
+    settingsProviders = data.providers || {};
+    settingsCurrentConfig = data;
+    settingsCurrentProvider = data.provider || 'minimax';
+
+    renderProviderGrid();
+    renderProviderFields(settingsCurrentProvider, data);
+    updateApiBadge(data);
+  } catch (e) {
+    console.error('Failed to load config:', e);
+  }
+}
+
+function closeSettings() {
+  document.getElementById('settingsOverlay').classList.remove('open');
+}
+
+function updateApiBadge(data) {
+  const badge = document.getElementById('apiStatusBadge');
+  if (!badge) return;
+  if (data.configured) {
+    badge.textContent = '✅ ' + (settingsProviders[data.provider]?.name || data.provider);
+    badge.style.background = 'rgba(74,222,128,0.15)';
+    badge.style.color = 'var(--green)';
+    badge.style.borderColor = 'var(--green)';
+    badge.style.cursor = 'default';
+    badge.removeAttribute('onclick');
+  } else {
+    badge.textContent = '⚠️ 未配置';
+    badge.style.background = 'rgba(248,113,113,0.15)';
+    badge.style.color = 'var(--red)';
+    badge.style.borderColor = 'var(--red)';
+    badge.style.cursor = 'pointer';
+    badge.setAttribute('onclick', 'openSettings()');
+  }
+}
+
+function renderProviderGrid() {
+  const grid = document.getElementById('providerGrid');
+  grid.innerHTML = '';
+  Object.entries(settingsProviders).forEach(([id, p]) => {
+    const btn = document.createElement('div');
+    btn.className = 'provider-btn' + (id === settingsCurrentProvider ? ' selected' : '');
+    btn.textContent = p.name;
+    btn.onclick = () => selectProvider(id);
+    grid.appendChild(btn);
+  });
+}
+
+function selectProvider(id) {
+  settingsCurrentProvider = id;
+  document.querySelectorAll('.provider-btn').forEach(b => b.classList.remove('selected'));
+  document.querySelector(`.provider-btn:nth-child(${Object.keys(settingsProviders).indexOf(id)+1})`).classList.add('selected');
+  renderProviderFields(id, {});
+}
+
+function renderProviderFields(providerId, data) {
+  const meta = settingsProviders[providerId];
+  const container = document.getElementById('settingsFields');
+  if (!meta) return;
+
+  // Get current values from data or use defaults
+  const currentKey = data.api_key || data.key_set ? '••••••••' : '';
+  const currentUrl = data.base_url || meta.url_default || '';
+  const currentModel = data.model || meta.models?.[0]?.id || '';
+
+  const modelsHtml = (meta.models || []).map(m =>
+    `<option value="${m.id}"${m.id === currentModel ? ' selected' : ''}>${m.name}</option>`
+  ).join('');
+
+  container.innerHTML = `
+    <div class="settings-field">
+      <label>🔑 API Key</label>
+      <input type="password" id="cfgApiKey" placeholder="输入你的 API Key" value="${currentKey}" autocomplete="off" />
+    </div>
+    <div class="settings-field">
+      <label>🌐 ${meta.url_label || 'API 地址'}</label>
+      <input type="text" id="cfgBaseUrl" placeholder="${meta.url_placeholder || meta.url_default}" value="${currentUrl}" />
+    </div>
+    <div class="settings-field">
+      <label>🤖 模型</label>
+      <select id="cfgModel">${modelsHtml}</select>
+      <div class="settings-hint">选择该提供商下的模型</div>
+    </div>
+  `;
+}
+
+async function testApiConfig() {
+  const result = document.getElementById('settingsTestResult');
+  result.className = 'testing';
+  result.textContent = '🔄 测试中...';
+  result.style.display = 'block';
+
+  const apiKey = document.getElementById('cfgApiKey').value.trim();
+  const baseUrl = document.getElementById('cfgBaseUrl').value.trim();
+  const model = document.getElementById('cfgModel').value;
+
+  if (!apiKey || apiKey === '••••••••') {
+    result.className = 'fail';
+    result.textContent = '❌ 请先输入 API Key';
+    return;
+  }
+
+  try {
+    const resp = await fetch('/api/config/test', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({
+        provider: settingsCurrentProvider,
+        api_key: apiKey,
+        base_url: baseUrl,
+        model: model,
+      })
+    });
+    const data = await resp.json();
+    if (data.success) {
+      result.className = 'ok';
+      result.textContent = '✅ 连接成功！响应: ' + data.message;
+    } else {
+      result.className = 'fail';
+      result.textContent = '❌ 连接失败: ' + data.message;
+    }
+  } catch (e) {
+    result.className = 'fail';
+    result.textContent = '❌ 网络错误: ' + e.message;
+  }
+}
+
+async function saveApiConfig() {
+  const saveBtn = document.getElementById('saveBtn');
+  const result = document.getElementById('settingsTestResult');
+  saveBtn.disabled = true;
+  saveBtn.textContent = '保存中...';
+
+  const apiKey = document.getElementById('cfgApiKey').value.trim();
+  const baseUrl = document.getElementById('cfgBaseUrl').value.trim();
+  const model = document.getElementById('cfgModel').value;
+
+  // If key shown as placeholder, don't change it (keep existing)
+  const finalKey = (apiKey === '••••••••' || !apiKey)
+    ? settingsCurrentConfig.api_key || ''
+    : apiKey;
+  const finalUrl = baseUrl || (settingsProviders[settingsCurrentProvider]?.url_default || '');
+
+  try {
+    const resp = await fetch('/api/config', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({
+        provider: settingsCurrentProvider,
+        api_key: finalKey,
+        base_url: finalUrl,
+        model: model,
+      })
+    });
+    const data = await resp.json();
+
+    if (data.success) {
+      settingsCurrentConfig = {
+        ...settingsCurrentConfig,
+        provider: settingsCurrentProvider,
+        model: model,
+        configured: true,
+      };
+      updateApiBadge(settingsCurrentConfig);
+      result.className = 'ok';
+      result.textContent = '✅ 设置已保存，正在使用 ' + (settingsProviders[settingsCurrentProvider]?.name || settingsCurrentProvider) + ' / ' + model;
+      setTimeout(closeSettings, 1200);
+    } else {
+      result.className = 'fail';
+      result.textContent = '❌ 保存失败';
+    }
+  } catch (e) {
+    result.className = 'fail';
+    result.textContent = '❌ 保存失败: ' + e.message;
+  } finally {
+    saveBtn.disabled = false;
+    saveBtn.textContent = '💾 保存设置';
+  }
+}
+
+// ============ Init ============
+
+// Load config on page load
+(async function initSettings() {
+  try {
+    const resp = await fetch('/api/config');
+    const data = await resp.json();
+    settingsProviders = data.providers || {};
+    settingsCurrentConfig = data;
+    settingsCurrentProvider = data.provider || 'minimax';
+    updateApiBadge(data);
+  } catch (e) {
+    console.error('Failed to load config on init:', e);
+  }
+})();
 </script>
 </body>
 </html>
