@@ -440,10 +440,19 @@ body {
 <div class="main">
   <!-- LEFT: Debate content -->
   <div class="debate-area" id="debateArea">
+    <!-- Persistent vote tracker survives innerHTML clears -->
+    <div id="voteTrackerTop" style="display:none;background:linear-gradient(135deg,rgba(108,99,255,0.15),rgba(167,139,250,0.1));border:1px solid var(--accent);border-radius:16px;padding:14px 18px;margin-bottom:8px;flex-shrink:0;position:sticky;top:0;z-index:10;">
+      <div style="font-size:13px;font-weight:700;color:var(--accent);margin-bottom:10px;">📊 实时投票监控</div>
+      <div id="voteTrackerGroups" style="display:flex;flex-direction:column;gap:8px;"></div>
+    </div>
+
+    <!-- Dynamic debate content (cleared on groups_created) -->
+    <div id="debateContent">
     <div style="text-align:center;padding:60px 20px;color:var(--text2);">
       <div style="font-size:48px;margin-bottom:16px;">💬</div>
       <div>输入话题，点击「发起辩论」</div>
       <div style="font-size:13px;margin-top:8px;">AI 角色将临时创建，围绕话题展开真实辩论</div>
+    </div>
     </div>
   </div>
 
@@ -584,6 +593,7 @@ function renderDynamicForm(fields) {
 }
 
 function resetForm() {
+  stopDebate(); // Stop any running debate first
   currentTopic = '';
   currentFields = [];
   document.getElementById('topicInputArea').style.display = 'block';
@@ -598,6 +608,9 @@ function resetForm() {
 function startDebate() {
   const topic = currentTopic || document.getElementById('topicInput').value.trim();
   if (!topic) { alert('请先输入话题'); return; }
+
+  // Stop any running debate and fully clean up
+  stopDebate();
 
   // Collect all field values into structured format
   const parts = [topic];
@@ -614,9 +627,15 @@ function startDebate() {
   
   const user_input = parts.join('\n');
 
-  if (evtSource) { evtSource.close(); evtSource = null; }
+  // Reset vote tracker
+  const voteTrackerTop = document.getElementById('voteTrackerTop');
+  if (voteTrackerTop) voteTrackerTop.style.display = 'none';
+  document.getElementById('voteTrackerGroups').innerHTML = '';
 
-  document.getElementById('debateArea').innerHTML = '';
+  // Reset debate content (preserve voteTrackerTop inside debateArea)
+  const debateArea = document.getElementById('debateArea');
+  const debateContent = document.getElementById('debateContent');
+  if (debateContent) debateContent.innerHTML = '';
   document.getElementById('statusArea').innerHTML = '';
   currentSession = null;
   activeGroups = {};
@@ -687,6 +706,7 @@ function handleEvent(evt) {
   else if (t === 'round_start') { currentRound = d.round; addPhaseBanner('🔄 第 ' + d.round + ' 轮讨论 — ' + d.title); addStatus('第 ' + d.round + ' 轮进行中', 'active'); }
   else if (t === 'agent_start') { handleAgentStart(d); }
   else if (t === 'agent_message') { handleAgentMessage(d); }
+  else if (t === 'agent_done') { handleAgentDone(d); }
   else if (t === 'group_round_done') { markGroupDone(d.group_id); }
   else if (t === 'group_voting') { handleGroupVoting(d); }
   else if (t === 'vote_cast') { handleVoteCast(d); }
@@ -706,8 +726,8 @@ function handleGroupsCreated(d) {
     activeGroups[g.id] = { ...g, agents: {}, messages: [], votingDone: false };
   });
 
-  const area = document.getElementById('debateArea');
-  area.innerHTML = '';
+  const content = document.getElementById('debateContent');
+  content.innerHTML = '';
 
   const bar = document.createElement('div');
   bar.className = 'groups-bar';
@@ -718,7 +738,7 @@ function handleGroupsCreated(d) {
     badge.textContent = g.name;
     bar.appendChild(badge);
   });
-  area.appendChild(bar);
+  content.appendChild(bar);
 
   d.groups.forEach(g => {
     const card = document.createElement('div');
@@ -729,13 +749,13 @@ function handleGroupsCreated(d) {
       '<div class="agents-container" id="agents-' + g.id + '"></div>' +
       '<div class="voting-section" id="voting-' + g.id + '" style="display:none;padding:12px;"></div>' +
       '<div class="group-result" id="result-' + g.id + '" style="display:none;"></div>';
-    area.appendChild(card);
+    content.appendChild(card);
   });
 }
 
 function handleResearching(d) {
-  const area = document.getElementById('debateArea');
-  const banner = area.querySelector('.phase-banner');
+  const content = document.getElementById('debateContent');
+  const banner = content.querySelector('.phase-banner');
   if (banner) banner.remove();
 
   const card = document.createElement('div');
@@ -751,8 +771,8 @@ function handleResearching(d) {
     '</div>' +
     '<div class="sources-grid" id="sources-grid"></div>';
 
-  area.innerHTML = '';
-  area.appendChild(card);
+  content.innerHTML = '';
+  content.appendChild(card);
 
   addStatus('收集资料中', 'active');
 }
@@ -795,15 +815,45 @@ function handleAgentStart(d) {
 
 function handleAgentMessage(d) {
   const contentEl = document.getElementById('agent-content-' + d.group_id + '-' + d.agent_key);
+  const entryId = 'agent-entry-' + d.group_id + '-' + d.agent_key;
+  const entry = document.getElementById(entryId);
   if (contentEl) {
-    contentEl.innerHTML = formatContent(d.content);
-    const entry = document.getElementById('agent-entry-' + d.group_id + '-' + d.agent_key);
+    // Always remove spinner when content arrives (including errors)
     if (entry) {
       const spinner = entry.querySelector('.spinner');
       if (spinner) spinner.remove();
     }
+    // Show error in red if content is an error string
+    if (d.content && d.content.startsWith('[Error:')) {
+      contentEl.innerHTML = '<span style="color:var(--red);font-size:13px;">' + d.content + '</span>';
+    } else {
+      contentEl.innerHTML = formatContent(d.content);
+    }
+  } else if (entry) {
+    // Content element not yet created (race condition) - remove spinner anyway
+    const spinner = entry.querySelector('.spinner');
+    if (spinner) spinner.remove();
+    // Create content element if missing
+    const ce = document.createElement('div');
+    ce.className = 'agent-content';
+    ce.id = 'agent-content-' + d.group_id + '-' + d.agent_key;
+    ce.innerHTML = d.content ? formatContent(d.content) : '';
+    entry.appendChild(ce);
   }
-  // User controls their own scroll position - removed auto-scroll
+}
+
+function handleAgentDone(d) {
+  // Safety net: always remove spinner when agent finishes
+  const entry = document.getElementById('agent-entry-' + d.group_id + '-' + d.agent_key);
+  if (entry) {
+    const spinner = entry.querySelector('.spinner');
+    if (spinner) spinner.remove();
+    // If no content was ever set, show timeout message
+    const contentEl = document.getElementById('agent-content-' + d.group_id + '-' + d.agent_key);
+    if (contentEl && contentEl.textContent === '思考中...') {
+      contentEl.innerHTML = '<span style="color:var(--yellow);font-size:13px;">[响应超时，内容未能在预期时间内生成]</span>';
+    }
+  }
 }
 
 function markGroupDone(groupId) {
@@ -812,6 +862,24 @@ function markGroupDone(groupId) {
 }
 
 function handleGroupVoting(d) {
+  // Show top vote tracker
+  const trackerTop = document.getElementById('voteTrackerTop');
+  trackerTop.style.display = 'block';
+
+  // Add group row to top tracker if not exists
+  let groupRow = document.getElementById('vtracker-' + d.group_id);
+  if (!groupRow) {
+    groupRow = document.createElement('div');
+    groupRow.id = 'vtracker-' + d.group_id;
+    groupRow.style = 'display:flex;align-items:center;gap:10px;font-size:13px;';
+    groupRow.innerHTML =
+      '<span style="font-weight:600;color:var(--accent);min-width:80px;">' + d.group_name + '</span>' +
+      '<span id="vtracker-status-' + d.group_id + '" style="color:var(--text2);">投票中...</span>' +
+      '<span id="vtracker-votes-' + d.group_id + '" style="margin-left:auto;display:flex;gap:6px;"></span>';
+    document.getElementById('voteTrackerGroups').appendChild(groupRow);
+  }
+
+  // Also update group card voting section
   const votingEl = document.getElementById('voting-' + d.group_id);
   if (votingEl) {
     votingEl.style.display = 'block';
@@ -822,22 +890,28 @@ function handleGroupVoting(d) {
 
 function handleVoteCast(d) {
   const votingEl = document.getElementById('voting-' + d.group_id);
-  if (!votingEl) return;
+  if (votingEl) {
+    const spinner = votingEl.querySelector('.spinner');
+    if (spinner) spinner.parentElement.remove();
+    const voteClass = d.vote === '支持' ? 'sup' : d.vote === '反对' ? 'against' : 'neutral';
+    const voteCard = document.createElement('div');
+    voteCard.className = 'vote-card';
+    const icon = d.vote === '支持' ? '👍' : d.vote === '反对' ? '👎' : '🤔';
+    voteCard.innerHTML =
+      '<span class="vote-emoji">' + icon + '</span>' +
+      '<span class="vote-name">' + d.agent_name + '</span>' +
+      '<span class="vote-tag ' + voteClass + '">' + d.vote + '</span>';
+    if (!votingEl.querySelector('.vote-card')) votingEl.innerHTML = '';
+    votingEl.appendChild(voteCard);
+  }
 
-  const spinner = votingEl.querySelector('.spinner');
-  if (spinner) spinner.parentElement.remove();
-
-  const voteClass = d.vote === '支持' ? 'sup' : d.vote === '反对' ? 'against' : 'neutral';
-  const voteCard = document.createElement('div');
-  voteCard.className = 'vote-card';
-  const icon = d.vote === '支持' ? '👍' : d.vote === '反对' ? '👎' : '🤔';
-  voteCard.innerHTML =
-    '<span class="vote-emoji">' + icon + '</span>' +
-    '<span class="vote-name">' + d.agent_name + '</span>' +
-    '<span class="vote-tag ' + voteClass + '">' + d.vote + '</span>';
-
-  if (!votingEl.querySelector('.vote-card')) votingEl.innerHTML = '';
-  votingEl.appendChild(voteCard);
+  // Update top tracker: add vote badge to group's votes container
+  const votesSpan = document.getElementById('vtracker-votes-' + d.group_id);
+  if (votesSpan) {
+    const voteClass = d.vote === '支持' ? 'sup' : d.vote === '反对' ? 'against' : 'neutral';
+    const icon = d.vote === '支持' ? '👍' : d.vote === '反对' ? '👎' : '🤔';
+    votesSpan.innerHTML += '<span class="vote-tag ' + voteClass + '" style="font-size:11px;">' + icon + ' ' + d.agent_name + '</span>';
+  }
 }
 
 function handleGroupVoteResult(d) {
@@ -849,6 +923,14 @@ function handleGroupVoteResult(d) {
   }
   const badge = document.getElementById('badge-' + d.group_id);
   if (badge) badge.className = 'group-badge done';
+
+  // Update top tracker: show final consensus
+  const statusEl = document.getElementById('vtracker-status-' + d.group_id);
+  if (statusEl) {
+    const icon = d.group_vote === '支持' ? '✅' : d.group_vote === '反对' ? '❌' : '⚖️';
+    statusEl.textContent = icon + ' ' + d.group_vote;
+    statusEl.style.color = d.group_vote === '支持' ? 'var(--green)' : d.group_vote === '反对' ? 'var(--red)' : 'var(--yellow)';
+  }
 }
 
 function handleFinalAnswer(d) {
@@ -875,13 +957,13 @@ function handleFinalAnswer(d) {
 }
 
 function addPhaseBanner(text) {
-  const area = document.getElementById('debateArea');
-  const existing = area.querySelector('.phase-banner');
+  const content = document.getElementById('debateContent');
+  const existing = content.querySelector('.phase-banner');
   if (existing) existing.remove();
   const banner = document.createElement('div');
   banner.className = 'phase-banner';
   banner.textContent = text;
-  area.insertBefore(banner, area.firstChild);
+  content.insertBefore(banner, content.firstChild);
 }
 
 function addStatus(text, type) {
@@ -913,8 +995,19 @@ function resetUI() {
 function stopDebate() {
   if (evtSource) { evtSource.close(); evtSource = null; }
   isRunning = false;
+
+  // Remove any stuck spinners
+  document.querySelectorAll('.spinner').forEach(s => s.remove());
+
+  // Reset vote tracker
+  const vt = document.getElementById('voteTrackerTop');
+  if (vt) vt.style.display = 'none';
+  const vg = document.getElementById('voteTrackerGroups');
+  if (vg) vg.innerHTML = '';
+
   addStatus('已停止', '');
-  document.getElementById('statusText').textContent = '已停止';
+  const st = document.getElementById('statusText');
+  if (st) st.textContent = '已停止';
   resetUI();
 }
 
