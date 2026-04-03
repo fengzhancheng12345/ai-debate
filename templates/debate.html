@@ -537,6 +537,7 @@ body {
 let currentSession = null, evtSource = null, isRunning = false, activeGroups = {};
 let currentRound = 0, currentTopic = '', currentFields = [];
 let debateCompletedData = null, userVoteSubmitted = false, userVoteChoice = null, userVoteReason = '';
+let _activeStreamId = 0; //递增token，每开启新辩论+1，用于丢弃旧session的事件
 
 // ==================== DYNAMIC FORM ====================
 async function analyzeTopic() {
@@ -581,24 +582,68 @@ function renderDynamicForm(fields) {
 }
 
 function resetForm() {
-  stopDebate();
+  stopDebate(); // full state + SSE cleanup
   currentTopic = ''; currentFields = [];
-  document.getElementById('topicInputArea').style.display = 'block';
-  document.getElementById('dynamicFormArea').style.display = 'none';
-  document.getElementById('topicInput').value = '';
-  document.getElementById('dynamicFieldsContainer').innerHTML = '';
-  document.querySelector('.input-form').scrollTop = 0;
-  debateCompletedData = null;
-  document.getElementById('exportBtn').style.display = 'none';
-  document.getElementById('userVotePanel').style.display = 'none';
-  userVoteSubmitted = false; userVoteChoice = null;
+
+  // Reset debate display area
+  const content = document.getElementById('debateContent');
+  if (content) {
+    content.innerHTML = '<div class="welcome-screen" id="welcomeScreen">' +
+      '<div class="welcome-emoji">🎙️</div>' +
+      '<div class="welcome-title">AI 辩论系统 v2.0</div>' +
+      '<div class="welcome-sub">输入话题，多个 AI 角色展开真实辩论，收集真实数据，并进行投票统计</div>' +
+      '<div class="welcome-features">' +
+      '<div class="welcome-feature"><span>🤖</span> 多智能体</div>' +
+      '<div class="welcome-feature"><span>🔍</span> 实时研究</div>' +
+      '<div class="welcome-feature"><span>🗳️</span> 投票统计</div>' +
+      '<div class="welcome-feature"><span>📥</span> 报告导出</div>' +
+      '</div></div>';
+  }
+
+  // Reset vote tracker
+  const vt = document.getElementById('voteTrackerTop');
+  if (vt) { vt.style.display = 'none'; vt.innerHTML = ''; }
+
+  // Reset topic chip
+  const chip = document.getElementById('topicChip');
+  if (chip) { chip.classList.remove('visible'); chip.textContent = ''; }
+
+  // Reset form UI
+  const tia = document.getElementById('topicInputArea');
+  if (tia) tia.style.display = 'block';
+  const dfa = document.getElementById('dynamicFormArea');
+  if (dfa) dfa.style.display = 'none';
+  const ti = document.getElementById('topicInput');
+  if (ti) { ti.value = ''; ti.disabled = false; }
+  const dfc = document.getElementById('dynamicFieldsContainer');
+  if (dfc) dfc.innerHTML = '';
+  const btn = document.getElementById('analyzeBtn');
+  if (btn) btn.disabled = false;
+  const sdb = document.getElementById('startDebateBtn');
+  if (sdb) sdb.disabled = false;
+  const exp = document.getElementById('exportBtn');
+  if (exp) exp.style.display = 'none';
+  const uvp = document.getElementById('userVotePanel');
+  if (uvp) uvp.style.display = 'none';
+
+  // Reset smart scroll
+  _scrolledUp = false;
+  if (_jumpBtn) { _jumpBtn.style.display = 'none'; }
+
+  // Reset status area
+  const sa = document.getElementById('statusArea');
+  if (sa) sa.innerHTML = '<div class="status-item"><div class="status-dot"></div> 等待发起辩论...</div>';
 }
 
 // ==================== DEBATE ====================
 function startDebate() {
   const topic = currentTopic || document.getElementById('topicInput').value.trim();
   if (!topic) { alert('请先输入话题'); return; }
-  stopDebate();
+  // Guard: prevent starting while a debate is already running
+  if (isRunning) {
+    if (!confirm('辩论正在进行中，确定要中断并开始新辩论吗？')) return;
+  }
+  stopDebate(); // clean up any existing debate first
   const parts = [topic];
   currentFields.forEach(field => {
     const el = document.getElementById('field_' + field.key);
@@ -640,14 +685,37 @@ function startDebate() {
 }
 
 function connectStream(sessionId) {
+  // Close any existing EventSource before creating a new one
+  if (evtSource) {
+    evtSource.close();
+    evtSource = null;
+  }
+  _activeStreamId++; // increment — this session's token
+  const myStreamId = _activeStreamId;
+
   evtSource = new EventSource('/api/debate/' + sessionId + '/stream');
-  evtSource.onmessage = function(e) { try { handleEvent(JSON.parse(e.data)); } catch(err) { console.error('Parse error:', err, e.data); } };
-  evtSource.onerror = function() { if (isRunning) { addStatus('❌ 连接中断', ''); isRunning = false; } evtSource.close(); resetUI(); };
-  evtSource.addEventListener('stream_end', function() { isRunning = false; evtSource.close(); addStatus('✅ 辩论完成', 'done'); resetUI(); });
+  evtSource.onmessage = function(e) {
+    // Discard events from a previous/old stream session
+    if (myStreamId !== _activeStreamId) return;
+    try { handleEvent(JSON.parse(e.data), myStreamId); } catch(err) { console.error('Parse error:', err, e.data); }
+  };
+  evtSource.onerror = function() {
+    if (myStreamId !== _activeStreamId) return;
+    if (isRunning) { addStatus('❌ 连接中断', ''); isRunning = false; }
+    evtSource.close(); evtSource = null;
+    resetUI();
+  };
+  evtSource.addEventListener('stream_end', function() {
+    if (myStreamId !== _activeStreamId) return;
+    isRunning = false; evtSource.close(); evtSource = null;
+    addStatus('✅ 辩论完成', 'done'); resetUI();
+  });
 }
 
 // ==================== EVENT HANDLERS ====================
-function handleEvent(evt) {
+function handleEvent(evt, streamId) {
+  // Guard: discard events from a stale stream
+  if (streamId !== _activeStreamId) return;
   const t = evt.type, d = evt.data || evt;
   if (t === 'ping' || t === 'stream_end') return;
   if (t === 'error') { showError(d.message); return; }
@@ -1262,16 +1330,39 @@ function showError(msg) {
 }
 
 function resetUI() {
+  // Only re-enable form if no debate is currently running
+  if (isRunning) return;
   const btns = ['analyzeBtn', 'startDebateBtn'];
   btns.forEach(id => { const b = document.getElementById(id); if (b) b.disabled = false; });
   const ti = document.getElementById('topicInput'); if (ti) ti.disabled = false;
 }
 
 function stopDebate() {
+  // Close SSE connection
   if (evtSource) { evtSource.close(); evtSource = null; }
+  _activeStreamId++; // invalidate any in-flight old events
   isRunning = false;
+
+  // Reset all state
+  currentSession = null;
+  activeGroups = {};
+  currentRound = 0;
+  debateCompletedData = null;
+  userVoteSubmitted = false;
+  userVoteChoice = null;
+  userVoteReason = '';
+
+  // Remove all spinner indicators
   document.querySelectorAll('.spinner').forEach(s => s.remove());
-  const vt = document.getElementById('voteTrackerTop'); if (vt) { vt.style.display = 'none'; vt.innerHTML = ''; }
+
+  // Hide vote tracker
+  const vt = document.getElementById('voteTrackerTop');
+  if (vt) { vt.style.display = 'none'; vt.innerHTML = ''; }
+
+  // Hide user vote panel
+  const uvp = document.getElementById('userVotePanel');
+  if (uvp) uvp.style.display = 'none';
+
   addStatus('已停止', '');
 }
 
