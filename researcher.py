@@ -147,66 +147,97 @@ class DebateResearcher:
     # -------------------------------------------------------------------------
     
     def _fetch_web_search(self, topic: str) -> str:
-        """DuckDuckGo web search - free, no API key"""
+        """Bing web search (HTML) - works in China, no API key needed"""
         try:
-            url = f"https://duckduckgo.com/?q={urllib.parse.quote(topic)}&ia=web"
+            url = f"https://www.bing.com/search?q={urllib.parse.quote(topic)}&first=1&rd=1"
             headers = {
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+                'Accept': 'text/html,application/xhtml+xml',
+                'Accept-Language': 'zh-CN,zh;q=0.9,en;q=0.8',
             }
             r = requests.get(url, headers=headers, timeout=10)
             if r.status_code != 200:
                 return ""
-            
-            # Try to parse snippets from the HTML
-            # Method 1: data-snippet attributes
-            snippets = re.findall(r'data-snippet="([^"]+)"', r.text)
-            
-            # Method 2: result__snippet class
+
+            # Parse Bing search result snippets
+            snippets = re.findall(
+                r'<li class="b_algo"[^>]*>.*?<p>([^<]+)</p>',
+                r.text, re.DOTALL
+            )
             if not snippets:
-                snippets = re.findall(r'<a class="result__snippet"[^>]*>([^<]+)</a>', r.text)
-            
-            # Method 3: search results from JSON-like data
+                snippets = re.findall(
+                    r'class="[^"]*b_paractiph[^"]*"[^>]*>([^<]+)',
+                    r.text
+                )
             if not snippets:
-                snippets = re.findall(r'"snippet":"([^"]+)"', r.text)
-            
+                snippets = re.findall(
+                    r'<p class="[^"]*"[^>]*>([^<]{30,300}?)</p>',
+                    r.text
+                )
+
             if snippets:
                 results = []
                 for s in snippets[:8]:
-                    clean = s.strip().replace('\\"', '"').replace('\\n', ' ')
-                    if clean and len(clean) > 10:
-                        results.append(f"- {clean}")
+                    clean = re.sub(r'<[^>]+>', '', s).strip()
+                    clean = clean.replace('&amp;', '&').replace('&quot;', '"').replace('&#39;', "'")
+                    if clean and len(clean) > 15:
+                        results.append(f"- {clean[:200]}")
                 if results:
-                    return f"【🌐 网络搜索结果】\n" + "\n".join(results)[:3000]
-            
+                    return f"【🌐 Bing 搜索结果】\n" + "\n".join(results)[:3000]
+
             return ""
         except Exception as e:
             print(f"Web search error: {e}")
             return ""
     
     def _fetch_wikipedia(self, topic: str) -> str:
-        """Wikipedia REST API - free, no API key"""
-        import urllib.parse
+        """Wikipedia: search for correct title, then get summary. Falls back gracefully."""
         try:
-            # Try English Wikipedia first
-            url = f"https://en.wikipedia.org/api/rest_v1/page/summary/{urllib.parse.quote(topic)}"
-            r = requests.get(url, timeout=8)
+            # Step 1: search for the article title (opensearch returns list: [query, [titles], [descs], [urls]])
+            search_url = (
+                "https://en.wikipedia.org/w/api.php"
+                "?action=opensearch"
+                "&search=" + urllib.parse.quote(topic) +
+                "&limit=1&format=json"
+            )
+            r = requests.get(search_url, timeout=8, headers={"User-Agent": "DebateBot/1.0 (research; mail@example.com)"})
+            title = None
             if r.status_code == 200:
                 data = r.json()
-                title = data.get('title', '')
-                extract = data.get('extract', '')
-                if extract:
-                    return f"【📚 Wikipedia】\n标题：{title}\n\n摘要：{extract[:2000]}"
-            
-            # Try Chinese Wikipedia as fallback
-            url = f"https://zh.wikipedia.org/api/rest_v1/page/summary/{urllib.parse.quote(topic)}"
-            r = requests.get(url, timeout=8)
+                # opensearch format: [search_term, [title1, title2], [desc1, desc2], [url1, url2]]
+                if isinstance(data, list) and len(data) >= 2 and isinstance(data[1], list) and data[1]:
+                    title = data[1][0]
+
+            if title:
+                # Step 2: fetch the article summary
+                summary_url = f"https://en.wikipedia.org/api/rest_v1/page/summary/{urllib.parse.quote(title)}"
+                r2 = requests.get(summary_url, timeout=8, headers={"User-Agent": "DebateBot/1.0 (research; mail@example.com)"})
+                if r2.status_code == 200:
+                    d2 = r2.json()
+                    extract = d2.get('extract', '')
+                    if extract:
+                        return f"【📚 Wikipedia】\n标题：{d2.get('title', title)}\n\n摘要：{extract[:2000]}"
+
+            # Chinese Wikipedia fallback
+            search_url_zh = (
+                "https://zh.wikipedia.org/w/api.php"
+                "?action=opensearch"
+                "&search=" + urllib.parse.quote(topic) +
+                "&limit=1&format=json"
+            )
+            r = requests.get(search_url_zh, timeout=8, headers={"User-Agent": "DebateBot/1.0 (research; mail@example.com)"})
             if r.status_code == 200:
                 data = r.json()
-                title = data.get('title', '')
-                extract = data.get('extract', '')
-                if extract:
-                    return f"【📚 维基百科】\n标题：{title}\n\n摘要：{extract[:2000]}"
-            
+                if isinstance(data, list) and len(data) >= 2 and isinstance(data[1], list) and data[1]:
+                    title_zh = data[1][0]
+                    summary_url_zh = f"https://zh.wikipedia.org/api/rest_v1/page/summary/{urllib.parse.quote(title_zh)}"
+                    r2 = requests.get(summary_url_zh, timeout=8, headers={"User-Agent": "DebateBot/1.0 (research; mail@example.com)"})
+                    if r2.status_code == 200:
+                        d2 = r2.json()
+                        extract = d2.get('extract', '')
+                        if extract:
+                            return f"【📚 维基百科】\n标题：{d2.get('title', title_zh)}\n\n摘要：{extract[:2000]}"
+
             return ""
         except Exception as e:
             print(f"Wikipedia error: {e}")
@@ -555,34 +586,53 @@ PE比率：{pe}
             return ""
     
     def _fetch_tech_news(self, topic: str) -> str:
-        """TechCrunch/36kr tech industry news via web search"""
+        """36kr / Bing News tech industry news - works in China"""
         try:
-            # Use a simplified approach - search DuckDuckGo for tech news
-            query = f"tech news {topic}"
-            url = f"https://duckduckgo.com/?q={urllib.parse.quote(query)}&ia=news"
+            # Try 36kr RSS (often accessible in China)
+            try:
+                rss_url = 'https://36kr.com/feed'
+                rss = requests.get(rss_url, timeout=6, headers={'User-Agent': 'Mozilla/5.0'})
+                if rss.status_code == 200:
+                    titles = re.findall(r'<title><!\[CDATA\[([^\]]+)\]\]></title>', rss.text)
+                    links = re.findall(r'<link><!\[CDATA\[([^\]]+)\]\]></link>', rss.text)
+                    if titles:
+                        results = []
+                        for i, t in enumerate(titles[:8]):
+                            clean = t.strip()
+                            if clean and len(clean) > 5:
+                                link = links[i].strip() if i < len(links) else ''
+                                results.append(f"- {clean}")
+                        if results:
+                            return "【📱 36Kr 科技资讯】\n" + "\n".join(results)[:3000]
+            except Exception:
+                pass
+
+            # Fallback: Bing News search
+            query = urllib.parse.quote(topic)
+            url = f"https://www.bing.com/news/search?q={query}&first=1&rd=1"
             headers = {
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+                'Accept-Language': 'zh-CN,zh;q=0.9,en;q=0.8',
             }
             r = requests.get(url, headers=headers, timeout=10)
             if r.status_code != 200:
                 return ""
-            
-            # Try to extract news titles
-            titles = re.findall(r'data-snippet="([^"]+)"', r.text)
+
+            titles = re.findall(r'<div class="news-item[^"]*"[^>]*>.*?<a[^>]*class="[^"]*title[^"]*"[^>]*>([^<]+)</a>', r.text, re.DOTALL)
             if not titles:
-                titles = re.findall(r'<a class="result__snippet"[^>]*>([^<]+)</a>', r.text)
+                titles = re.findall(r'class="[^"]*news-title[^"]*"[^>]*>([^<]+)<', r.text)
             if not titles:
-                titles = re.findall(r'"title":"([^"]+)"', r.text)
-            
+                titles = re.findall(r'<h2[^>]*><a[^>]*>([^<]{10,200})</a></h2>', r.text)
             if titles:
                 results = []
                 for t in titles[:8]:
-                    clean = t.strip().replace('\\"', '"')[:200]
+                    clean = re.sub(r'<[^>]+>', '', t).strip()
+                    clean = clean.replace('&amp;', '&').replace('&quot;', '"')
                     if clean and len(clean) > 10:
-                        results.append(f"- {clean}")
+                        results.append(f"- {clean[:200]}")
                 if results:
                     return "【📱 科技新闻】\n" + "\n".join(results)[:3000]
-            
+
             return ""
         except Exception as e:
             print(f"Tech news error: {e}")

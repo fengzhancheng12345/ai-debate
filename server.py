@@ -586,12 +586,12 @@ async def analyze_topic(data: dict):
     from moderation import check_topic, contains_sensitive
     ok, reason = check_topic(topic)
     if not ok:
-        return {"error": reason}
+        raise HTTPException(status_code=400, detail=reason)
 
     # 检查用户补充的背景信息（如果有）
     user_context = data.get("user_context", "")
     if user_context and contains_sensitive(user_context):
-        return {"error": "背景信息中包含敏感内容，请修改后重试"}
+        raise HTTPException(status_code=400, detail="背景信息中包含敏感内容，请修改后重试")
 
     prompt = f"""用户要辩论的话题：{topic}
 
@@ -664,11 +664,11 @@ async def start_debate(data: dict):
     from moderation import check_topic, contains_sensitive
     ok, reason = check_topic(topic)
     if not ok:
-        return {"error": reason}
+        raise HTTPException(status_code=400, detail=reason)
 
     # 检查用户输入的背景信息
     if user_input and contains_sensitive(user_input):
-        return {"error": "背景信息中包含敏感内容，请修改后重试"}
+        raise HTTPException(status_code=400, detail="背景信息中包含敏感内容，请修改后重试")
 
     session_id = store.create_session(topic, user_input)
     return {"success": True, "session_id": session_id, "topic": topic}
