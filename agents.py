@@ -455,30 +455,46 @@ def run_debate_stream(session_id: str, client):
     
     # Build research context for agents
     def build_research_context(agent_role: str, research_data: Dict[str, str]) -> str:
-        """Build context string from research data for a specific agent role."""
+        """Build context string from research data for a specific agent role.
+        
+        Sources are labeled with markers that:
+        1. Are readable for the AI agent
+        2. Can be parsed by the frontend for display as styled citation badges
+        """
         if not research_data:
             return ""
-        
-        sections = ["\n\n【📊 实时研究数据】\n以下是收集到的真实资料，请结合这些数据来论证你的观点：\n"]
-        
-        source_labels = {
-            "_fetch_web_search": "🌐 网络搜索",
-            "_fetch_wikipedia": "📚 维基百科",
-            "_fetch_news": "📰 百度新闻",
-            "_fetch_yahoo_finance": "💹 Yahoo Finance",
-            "_fetch_macro_data": "📈 宏观经济(FRED)",
-            "_fetch_china_stats": "🏛️ 中国统计数据",
-            "_fetch_arxiv": "📑 arXiv学术论文",
-            "_fetch_semantic_scholar": "🔬 Semantic Scholar",
-            "_fetch_github": "💻 GitHub项目",
-            "_fetch_tech_news": "📱 科技新闻",
+
+        # Source metadata: [frontend_label, citation_marker]
+        # citation_marker must match sourceMap keys in debate.html formatContent()
+        source_meta = {
+            "_fetch_web_search": ("🌐 Bing 搜索结果", "Bing"),
+            "_fetch_wikipedia": ("📚 Wikipedia / 维基百科", "Wikipedia"),
+            "_fetch_news": ("📰 百度新闻", "百度新闻"),
+            "_fetch_yahoo_finance": ("💹 Yahoo Finance 股市数据", "Yahoo Finance"),
+            "_fetch_macro_data": ("📈 FRED 宏观经济数据", "FRED"),
+            "_fetch_china_stats": ("🏛️ 中国国家统计局数据", "宏观经济"),
+            "_fetch_arxiv": ("📑 arXiv 学术论文", "arXiv"),
+            "_fetch_semantic_scholar": ("🔬 Semantic Scholar 学术论文", "Semantic Scholar"),
+            "_fetch_github": ("💻 GitHub 开源项目", "GitHub"),
+            "_fetch_tech_news": ("📱 科技新闻", "科技新闻"),
         }
-        
+
+        sections = [
+            "\n\n【📊 实时研究数据 - 请结合以下真实数据来论证你的观点】\n"
+            "重要：你引用某个来源的数据时，请在论述后面用方括号标注来源，例如："
+            "「根据 [Wikipedia] 的数据...」「根据 [FRED] 的统计...」"
+            "这样可以让用户清楚看到你的论点有真实数据支撑。\n"
+        ]
+
         for source_method, data in research_data.items():
             if data and data.strip():
-                label = source_labels.get(source_method, source_method)
-                sections.append(f"\n{label}：\n{data[:2500]}\n")
-        
+                meta = source_meta.get(source_method, (source_method, source_method))
+                label, marker = meta
+                sections.append(
+                    f"\n【{label}】（引用时使用 [{marker}] 标注）\n"
+                    f"{data[:3000]}\n"
+                )
+
         return "".join(sections)
     
     # Step 2: Debate rounds
@@ -515,6 +531,7 @@ def run_debate_stream(session_id: str, client):
 - 可以同意或反对其他人的观点，但必须给出具体理由
 - 不要重复别人已经说过的内容，要提出新的视角
 - 用中文回复
+- 【数据引用】引用研究数据时，用方括号标注来源，例如：[Wikipedia]、[FRED]、[Bing]、[36kr] 等
 
 {agent.name}的发言："""
                 else:
@@ -529,6 +546,7 @@ def run_debate_stream(session_id: str, client):
 - 至少150字，要有实质性内容
 - 提出有价值的观点和具体论据
 - 用中文回复
+- 【数据引用】引用研究数据时，用方括号标注来源，例如：[Wikipedia]、[FRED]、[Bing]、[36kr] 等
 
 {agent.name}的发言："""
                 
@@ -542,7 +560,10 @@ def run_debate_stream(session_id: str, client):
 3. 可以结合对话历史中其他人的观点来回应
 4. 保持角色一致性，不要偏离你的角色定位
 5. 回复要有实质性内容，至少150字以上
-6. 不要说"作为AI"之类的话，你就是你这个角色"""
+6. 不要说"作为AI"之类的话，你就是你这个角色
+7. 【重要】如果你引用了研究数据中的具体数字、事实或结论，
+   必须在后面的方括号里标注来源，例如：「根据[Wikipedia]...」「根据[FRED]统计...」「根据[Bing]...」
+   这能增加论点可信度，是本系统的重要特色。"""
                 
                 yield {"type": "agent_start", "data": {
                     "group_id": group.id,
@@ -613,13 +634,15 @@ def run_debate_stream(session_id: str, client):
 
 请明确表态：支持 / 反对 / 中立
 并简要说明原因（50字以内）
+如果引用了具体数据，请用方括号标注来源，如：[Wikipedia]、[FRED]、[Bing]
 
 你的立场："""
-            
+
             system_prompt = f"""你是一个被人格化的AI角色。
 你的身份：{agent.name} {agent.emoji}
 
-请直接给出你的立场：支持、反对或中立，并用中文说明原因（50字以内）。"""
+请直接给出你的立场：支持、反对或中立，并用中文说明原因（50字以内）。
+如果引用了具体数据，请用方括号标注来源，如：[Wikipedia]、[FRED]、[Bing]。"""
             
             response = call_with_retry(
                 [{"role": "user", "content": vote_prompt}],
@@ -684,13 +707,14 @@ def run_debate_stream(session_id: str, client):
     synthesis_prompt = f"""{full_summary_input}
 
 请作为辩论总结专家，写出详尽的最终总结报告，要求：
-1. 总结各小组的核心观点（100字以上）
-2. 分析各方主要分歧
+1. 总结各小组的核心观点（100字以上），引用数据时使用方括号标注来源如：[Wikipedia]、[FRED]、[Bing]
+2. 分析各方主要分歧，指出哪些分歧可以用真实数据来佐证
 3. 找出各方共识点
 4. 给出你的最终建议（100字以上，要有实质性内容）
 
-用中文回复，至少300字。格式不限，但要结构清晰。"""
-    
+用中文回复，至少300字。格式不限，但要结构清晰。
+【重要】在总结中引用具体数据时，请用方括号标注来源，例如：[Wikipedia]、[FRED]、[Bing]、[36kr] 等。
+"""    
     synthesis_system = "你是一个辩论总结专家，擅长综合各方观点，给出平衡且有深度的结论。"
     
     final_summary = call_with_retry(

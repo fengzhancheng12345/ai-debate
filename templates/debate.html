@@ -146,6 +146,14 @@ body {
 .agent-content { font-size: 14px; line-height: 1.85; color: var(--text); white-space: pre-wrap; word-break: break-word; }
 .agent-content code { background: var(--bg); padding: 2px 6px; border-radius: 4px; font-family: 'Fira Code', monospace; font-size: 13px; }
 
+/* 图片渲染 */
+.agent-img-wrap { margin: 10px 0; border-radius: 10px; overflow: hidden; border: 1px solid var(--border); }
+.agent-img { max-width: 100%; max-height: 300px; display: block; border-radius: 10px; }
+.agent-img-fallback { display: none; align-items: center; gap: 6px; padding: 10px 14px; background: var(--bg3); color: var(--text2); font-size: 12px; }
+
+/* 数据来源标签 */
+.agent-sources { animation: fadeSlide 0.3s ease; }
+
 /* ===== RESEARCH CARD ===== */
 .research-card {
   background: var(--bg2); border: 1px solid rgba(34,211,238,0.3); border-radius: 16px;
@@ -950,18 +958,204 @@ function exportDebate(format) {
 }
 
 // ==================== UTILS ====================
+/**
+ * Enhanced content formatter:
+ * 1. HTML-escapes text first (before any processing)
+ * 2. Extracts and renders image URLs as actual images
+ * 3. Parses and styles citation markers [Wikipedia], [FRED], [Bing], etc.
+ * 4. Renders data tables from pipe-separated lines
+ * 5. Handles markdown: bold, italic, code blocks, headers
+ * 6. Splits off "数据来源" section if detected
+ */
 function formatContent(text) {
   if (!text) return '';
+
+  // --- Extract sources section first ---
+  let sourcesHtml = '';
+  const sourcesMatch = text.match(/(?:【来源|来源|数据来源|Sources?:)\s*([\s\S]{10,800})$/i);
+  if (sourcesMatch) {
+    const sourcesText = sourcesMatch[1].trim();
+    text = text.replace(sourcesMatch[0], '');
+    sourcesHtml = renderSourcesSection(sourcesText);
+  }
+
+  // --- Step 1: HTML escape ---
   text = text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-  text = text.replace(/^## (.+)$/gm, '<h2 style="color:var(--yellow);margin:10px 0 4px;font-size:15px;">$1</h2>');
-  text = text.replace(/^### (.+)$/gm, '<h3 style="color:var(--cyan);margin:8px 0 3px;font-size:14px;">$1</h3>');
+
+  // --- Step 2: Extract image URLs and render as <img> ---
+  const imgPlaceholders = [];
+  text = text.replace(/(?:https?:\/\/[-a-zA-Z0-9._~:/?#\[\]@!$&'()*+,;%=]+\.(?:jpg|jpeg|png|gif|webp|bmp|svg))(?:[-a-zA-Z0-9._~:/?#\[\]@!$&'()*+,;=%]*)/gi, function(match) {
+    const idx = imgPlaceholders.length;
+    imgPlaceholders.push('<div class="agent-img-wrap">' +
+      '<img src="' + match + '" class="agent-img" loading="lazy" ' +
+      'onerror="this.style.display=\'none\';this.nextElementSibling.style.display=\'flex\'" />' +
+      '<div class="agent-img-fallback">🖼️ 图片加载失败: ' + match.substring(0, 60) + '...</div>' +
+      '</div>');
+    return '___IMG_' + idx + '___';
+  });
+
+  // Also catch bare URLs to image CDNs / Unsplash / etc.
+  text = text.replace(/(?:https?:\/\/[-a-zA-Z0-9._~:/?#\[\]@!$&'()*+,;%=]+\/(?:images?|photos?|pics?|img|media)[-a-zA-Z0-9._~:/?#\[\]@!$&'()*+,;=%]*)(?:\s|$|<)/gi, function(match) {
+    const url = match.trim();
+    const idx = imgPlaceholders.length;
+    imgPlaceholders.push('<div class="agent-img-wrap">' +
+      '<img src="' + url + '" class="agent-img" loading="lazy" ' +
+      'onerror="this.style.display=\'none\';this.nextElementSibling.style.display=\'flex\'" />' +
+      '<div class="agent-img-fallback">🖼️ 图片无法显示</div>' +
+      '</div>');
+    return '___IMG_' + idx + '___';
+  });
+
+  // --- Step 3: Parse citation markers and collect source info ---
+  const citedSources = new Set();
+  const sourceMap = {
+    'wikipedia': { icon: '📚', label: 'Wikipedia', color: '#e8710a' },
+    'wiki': { icon: '📚', label: 'Wikipedia', color: '#e8710a' },
+    '维基百科': { icon: '📚', label: '维基百科', color: '#e8710a' },
+    'wiki': { icon: '📚', label: 'Wikipedia', color: '#e8710a' },
+    'fred': { icon: '📈', label: 'FRED经济数据', color: '#059669' },
+    '宏观经济': { icon: '📈', label: '宏观经济数据', color: '#059669' },
+    'bing': { icon: '🌐', label: 'Bing搜索', color: '#0078d4' },
+    '网络搜索': { icon: '🌐', label: '网络搜索', color: '#0078d4' },
+    '36kr': { icon: '📱', label: '36Kr科技', color: '#f97316' },
+    '科技新闻': { icon: '📱', label: '科技新闻', color: '#f97316' },
+    'arxiv': { icon: '📑', label: 'arXiv学术', color: '#7c3aed' },
+    'semantic scholar': { icon: '🔬', label: '学术论文', color: '#7c3aed' },
+    'github': { icon: '💻', label: 'GitHub', color: '#24292f' },
+    '百度新闻': { icon: '📰', label: '百度新闻', color: '#2932e1' },
+    'news': { icon: '📰', label: '新闻', color: '#dc2626' },
+    'finance': { icon: '💹', label: '财经数据', color: '#059669' },
+    'yahoo finance': { icon: '💹', label: 'Yahoo Finance', color: '#7c3aed' },
+    'stock': { icon: '📊', label: '股票数据', color: '#059669' },
+  };
+
+  // Replace citation markers: [来源1], [Wikipedia], [FRED], 【来源】, etc.
+  text = text.replace(/\[([^\[\]]{2,30})\](?=\D|$)/g, function(match, name) {
+    const key = name.trim();
+    const src = sourceMap[key.toLowerCase()];
+    if (src) {
+      citedSources.add(key.toLowerCase());
+      return '<span class="citation" style="display:inline-flex;align-items:center;gap:2px;background:rgba(' + hexToRgb(src.color) + ',0.12);border:1px solid rgba(' + hexToRgb(src.color) + ',0.35);color:' + src.color + ';font-size:11px;padding:1px 6px;border-radius:10px;margin:0 1px;cursor:help;" title="' + src.label + '">' + src.icon + ' ' + src.label + '</span>';
+    }
+    // Generic citation
+    citedSources.add(key);
+    return '<span class="citation" style="display:inline-flex;align-items:center;gap:2px;background:rgba(124,111,255,0.12);border:1px solid rgba(124,111,255,0.3);color:var(--accent);font-size:11px;padding:1px 6px;border-radius:10px;margin:0 1px;">📎 ' + name + '</span>';
+  });
+
+  // Also catch 【来源名称】 style markers
+  text = text.replace(/【([^【】]{2,20})】/g, function(match, name) {
+    const key = name.trim().toLowerCase();
+    const src = sourceMap[key];
+    if (src) {
+      citedSources.add(key);
+      return '<span class="citation" style="display:inline-flex;align-items:center;gap:2px;background:rgba(' + hexToRgb(src.color) + ',0.12);border:1px solid rgba(' + hexToRgb(src.color) + ',0.35);color:' + src.color + ';font-size:11px;padding:1px 6px;border-radius:10px;margin:0 1px;cursor:help;" title="' + src.label + '">' + src.icon + ' ' + src.label + '</span>';
+    }
+    return '<span class="citation" style="display:inline-flex;align-items:center;gap:2px;background:rgba(124,111,255,0.12);border:1px solid rgba(124,111,255,0.3);color:var(--accent);font-size:11px;padding:1px 6px;border-radius:10px;margin:0 1px;">📎 ' + name + '</span>';
+  });
+
+  // --- Step 4: Render tables from pipe-separated lines ---
+  const lines = text.split('\n');
+  const tableLines = [];
+  let inTable = false;
+  const tableBuffer = [];
+
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i].trim();
+    // Detect table: lines with multiple | characters
+    if ((line.match(/\|/g) || []).length >= 2) {
+      if (!inTable) { inTable = true; tableBuffer.length = 0; }
+      tableBuffer.push(line);
+    } else {
+      if (inTable && tableBuffer.length >= 2) {
+        tableLines.push(tableBuffer.join('\n'));
+        tableBuffer.length = 0;
+      }
+      inTable = false;
+    }
+  }
+  if (inTable && tableBuffer.length >= 2) tableLines.push(tableBuffer.join('\n'));
+
+  // Render detected tables
+  tableLines.forEach(tableRaw => {
+    const rows = tableRaw.split('\n').map(l => l.trim()).filter(l => l);
+    if (rows.length < 2) return;
+    const colCounts = rows.map(r => (r.match(/\|/g) || []).length);
+    if (Math.max(...colCounts) < 3) return; // need at least 3 columns
+
+    let tableHtml = '<div style="overflow-x:auto;margin:10px 0;"><table style="width:100%;border-collapse:collapse;font-size:13px;">';
+    rows.forEach((row, ri) => {
+      const cells = row.split('|').filter((_, i, arr) => i > 0 && i < arr.length - 1);
+      if (ri === 0) {
+        // Header row
+        tableHtml += '<thead><tr style="background:rgba(124,111,255,0.15);">';
+        cells.forEach(cell => { tableHtml += '<th style="padding:8px 12px;text-align:left;border:1px solid var(--border);color:var(--accent);font-weight:700;">' + cell.trim() + '</th>'; });
+        tableHtml += '</tr></thead><tbody>';
+      } else {
+        const bg = ri % 2 === 0 ? 'var(--bg3)' : 'transparent';
+        tableHtml += '<tr style="background:' + bg + ';">';
+        cells.forEach(cell => { tableHtml += '<td style="padding:7px 12px;border:1px solid var(--border);color:var(--text);">' + cell.trim() + '</td>'; });
+        tableHtml += '</tr>';
+      }
+    });
+    tableHtml += '</tbody></table></div>';
+    text = text.replace(tableRaw, tableHtml);
+  });
+
+  // --- Step 5: Markdown formatting ---
+  text = text.replace(/^## (.+)$/gm, '<h2 style="color:var(--yellow);margin:12px 0 6px;font-size:15px;font-weight:700;">$1</h2>');
+  text = text.replace(/^### (.+)$/gm, '<h3 style="color:var(--cyan);margin:10px 0 4px;font-size:14px;font-weight:700;">$1</h3>');
   text = text.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
   text = text.replace(/\*(.+?)\*/g, '<em>$1</em>');
-  text = text.replace(/```([\s\S]*?)```/g, '<pre style="background:var(--bg);padding:10px;border-radius:8px;overflow-x:auto;margin:8px 0;"><code>$1</code></pre>');
-  text = text.replace(/`([^`]+)`/g, '<code>$1</code>');
+  text = text.replace(/```([\s\S]*?)```/g, '<pre style="background:var(--bg);padding:12px;border-radius:8px;overflow-x:auto;margin:8px 0;border:1px solid var(--border);"><code>$1</code></pre>');
+  text = text.replace(/`([^`]+)`/g, '<code style="background:var(--bg);padding:1px 5px;border-radius:4px;font-size:12.5px;">$1</code>');
+
+  // --- Step 6: Numbered lists ---
+  text = text.replace(/^(\d+)\. (.+)$/gm, '<li style="margin-left:20px;padding:2px 0;"><span style="color:var(--accent);font-weight:700;margin-right:6px;">$1.</span>$2</li>');
+
+  // --- Step 7: Bullet lists ---
+  text = text.replace(/^[-•·] (.+)$/gm, '<li style="margin-left:20px;padding:2px 0;list-style:none;"><span style="color:var(--accent);margin-right:6px;">•</span>$1</li>');
+
+  // --- Step 8: Restore image placeholders ---
+  imgPlaceholders.forEach((html, idx) => {
+    text = text.replace('___IMG_' + idx + '___', html);
+  });
+
+  // --- Step 9: Paragraphs ---
+  text = text.replace(/\n{3,}/g, '\n\n');
   text = text.replace(/\n\n/g, '</p><p style="margin:6px 0;">');
   text = text.replace(/\n/g, '<br>');
-  return '<p style="margin:6px 0;">' + text + '</p>';
+
+  // --- Step 10: Wrap in paragraph ---
+  let result = '<div class="agent-content-body" style="line-height:1.9;font-size:14px;">';
+  result += '<p style="margin:6px 0;">' + text + '</p>';
+
+  // Add sources section if there were citations or extracted sources
+  if (citedSources.size > 0 || sourcesHtml) {
+    const citedList = Array.from(citedSources).map(k => {
+      const src = sourceMap[k];
+      if (src) return '<span style="display:inline-flex;align-items:center;gap:3px;background:rgba(' + hexToRgb(src.color) + ',0.1);border:1px solid rgba(' + hexToRgb(src.color) + ',0.25);color:' + src.color + ';font-size:11px;padding:2px 8px;border-radius:10px;margin:2px;">' + src.icon + ' ' + src.label + '</span>';
+      return '<span style="display:inline-flex;align-items:center;gap:3px;background:rgba(124,111,255,0.1);border:1px solid rgba(124,111,255,0.25);color:var(--accent);font-size:11px;padding:2px 8px;border-radius:10px;margin:2px;">📎 ' + k + '</span>';
+    }).join('');
+    result += '<div class="agent-sources" style="margin-top:12px;padding-top:10px;border-top:1px solid var(--border);">' +
+      '<div style="font-size:11px;color:var(--text2);font-weight:600;margin-bottom:6px;display:flex;align-items:center;gap:4px;">📖 引用数据来源 ' +
+      '<span style="font-weight:400;font-size:10px;">（以下信息来源已被 AI 引用）</span></div>' +
+      citedList + (sourcesHtml ? '<div style="margin-top:6px;font-size:12px;color:var(--text2);">' + sourcesHtml + '</div>' : '') +
+      '</div>';
+  }
+
+  result += '</div>';
+  return result;
+}
+
+function renderSourcesSection(text) {
+  if (!text) return '';
+  // Clean and format source text
+  const lines = text.split('\n').filter(l => l.trim());
+  if (lines.length === 0) return '';
+  return lines.map(l => {
+    const clean = l.replace(/^[-•·*\d.。]+\s*/, '').trim();
+    return '<div style="font-size:11px;color:var(--text2);padding:2px 0;">• ' + clean + '</div>';
+  }).join('');
 }
 
 function scrollToBottom() {
@@ -1020,12 +1214,31 @@ function stopDebate() {
 let settingsProviders = {}, settingsCurrentProvider = 'minimax', settingsCurrentConfig = {};
 
 async function openSettings() {
-  const overlay = document.getElementById('settingsOverlay'); overlay.classList.add('open');
+  const overlay = document.getElementById('settingsOverlay');
+  const fieldsContainer = document.getElementById('settingsFields');
+  const providerGrid = document.getElementById('providerGrid');
+  const testResult = document.getElementById('settingsTestResult');
+
+  // Immediately show modal with loading state
+  overlay.classList.add('open');
+  fieldsContainer.innerHTML = '<div style="text-align:center;padding:40px 20px;color:var(--text2);font-size:14px;"><span class="spinner" style="margin:0 auto 12px;display:block;"></span>加载中...</div>';
+  providerGrid.innerHTML = '';
+  if (testResult) { testResult.style.display = 'none'; }
+
   try {
-    const resp = await fetch('/api/config'); const data = await resp.json();
-    settingsProviders = data.providers || {}; settingsCurrentConfig = data; settingsCurrentProvider = data.provider || 'minimax';
-    renderProviderGrid(); renderProviderFields(settingsCurrentProvider, data); updateApiBadge(data);
-  } catch (e) { console.error('Failed to load config:', e); }
+    const resp = await fetch('/api/config');
+    if (!resp.ok) throw new Error('HTTP ' + resp.status);
+    const data = await resp.json();
+    settingsProviders = data.providers || {};
+    settingsCurrentConfig = data;
+    settingsCurrentProvider = data.provider || 'minimax';
+    renderProviderGrid();
+    renderProviderFields(settingsCurrentProvider, data);
+    updateApiBadge(data);
+  } catch (e) {
+    fieldsContainer.innerHTML = '<div style="text-align:center;padding:30px 20px;color:var(--red);font-size:13px;">❌ 加载失败: ' + e.message + '<br><br><button onclick="openSettings()" style="background:var(--bg3);border:1px solid var(--border);color:var(--text);padding:6px 16px;border-radius:8px;cursor:pointer;">重试</button></div>';
+    console.error('Settings load error:', e);
+  }
 }
 
 function closeSettings() { document.getElementById('settingsOverlay').classList.remove('open'); }
