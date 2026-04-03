@@ -15,6 +15,7 @@ from agents import run_debate_stream
 PROVIDERS = {
     "minimax": {
         "name": "MiniMax",
+        "name_en": "MiniMax",
         "url_label": "API 地址",
         "url_placeholder": "https://api.minimax.io/anthropic",
         "url_default": "https://api.minimax.io/anthropic",
@@ -27,6 +28,7 @@ PROVIDERS = {
     },
     "deepseek": {
         "name": "DeepSeek",
+        "name_en": "DeepSeek",
         "url_label": "API 地址",
         "url_placeholder": "https://api.deepseek.com",
         "url_default": "https://api.deepseek.com",
@@ -39,6 +41,7 @@ PROVIDERS = {
     },
     "openai": {
         "name": "OpenAI",
+        "name_en": "OpenAI",
         "url_label": "API 地址",
         "url_placeholder": "https://api.openai.com/v1",
         "url_default": "https://api.openai.com/v1",
@@ -46,13 +49,134 @@ PROVIDERS = {
             {"id": "gpt-4o", "name": "GPT-4o (推荐)"},
             {"id": "gpt-4o-mini", "name": "GPT-4o Mini (便宜)"},
             {"id": "gpt-4-turbo", "name": "GPT-4 Turbo"},
-            {"id": "gpt-3.5-turbo", "name": "GPT-3.5 Turbo (便宜)"},
+            {"id": "gpt-3.5-turbo", "name": "GPT-3.5 Turbo"},
         ],
         "api_format": "openai",
         "timeout": 90,
     },
+    "anthropic": {
+        "name": "Anthropic",
+        "name_en": "Anthropic",
+        "url_label": "API 地址",
+        "url_placeholder": "https://api.anthropic.com",
+        "url_default": "https://api.anthropic.com",
+        "models": [
+            {"id": "claude-3-5-sonnet-20241022", "name": "Claude 3.5 Sonnet (推荐)"},
+            {"id": "claude-3-opus-20240229", "name": "Claude 3 Opus"},
+            {"id": "claude-3-haiku-20240307", "name": "Claude 3 Haiku (极速)"},
+        ],
+        "api_format": "anthropic_direct",
+        "timeout": 60,
+    },
+    "google": {
+        "name": "Google AI",
+        "name_en": "Google Gemini",
+        "url_label": "API 地址",
+        "url_placeholder": "https://generativelanguage.googleapis.com/v1beta",
+        "url_default": "https://generativelanguage.googleapis.com/v1beta",
+        "models": [
+            {"id": "gemini-2.0-flash", "name": "Gemini 2.0 Flash (推荐)"},
+            {"id": "gemini-1.5-flash", "name": "Gemini 1.5 Flash"},
+            {"id": "gemini-1.5-pro", "name": "Gemini 1.5 Pro"},
+            {"id": "gemini-pro", "name": "Gemini Pro"},
+        ],
+        "api_format": "google",
+        "timeout": 60,
+    },
+    "mistral": {
+        "name": "Mistral AI",
+        "name_en": "Mistral",
+        "url_label": "API 地址",
+        "url_placeholder": "https://api.mistral.ai/v1",
+        "url_default": "https://api.mistral.ai/v1",
+        "models": [
+            {"id": "mistral-large-latest", "name": "Mistral Large (推荐)"},
+            {"id": "mistral-small-latest", "name": "Mistral Small"},
+            {"id": "open-mixtral-8x22b", "name": "Mixtral 8x22B (开源)"},
+            {"id": "open-mistral-7b", "name": "Mistral 7B (开源)"},
+        ],
+        "api_format": "openai",
+        "timeout": 60,
+    },
+    "cohere": {
+        "name": "Cohere",
+        "name_en": "Cohere",
+        "url_label": "API 地址",
+        "url_placeholder": "https://api.cohere.ai/v1",
+        "url_default": "https://api.cohere.ai/v1",
+        "models": [
+            {"id": "command-r-plus", "name": "Command R+ (推荐)"},
+            {"id": "command-r", "name": "Command R"},
+            {"id": "command", "name": "Command (便宜)"},
+        ],
+        "api_format": "cohere",
+        "timeout": 60,
+    },
+    "together": {
+        "name": "Together AI",
+        "name_en": "Together AI",
+        "url_label": "API 地址",
+        "url_placeholder": "https://api.together.xyz/v1",
+        "url_default": "https://api.together.xyz/v1",
+        "models": [
+            {"id": "meta-llama/Llama-3-70b-chat-hf", "name": "Llama 3 70B (推荐)"},
+            {"id": "meta-llama/Llama-3-8b-chat-hf", "name": "Llama 3 8B"},
+            {"id": "mistralai/Mixtral-8x22B-Instruct-v0.1", "name": "Mixtral 8x22B"},
+            {"id": "Qwen/Qwen2-72B-Instruct", "name": "Qwen2 72B"},
+            {"id": "deepseek-ai/DeepSeek-V3", "name": "DeepSeek V3"},
+        ],
+        "api_format": "openai",
+        "timeout": 90,
+    },
+    "huggingface": {
+        "name": "HuggingFace",
+        "name_en": "Hugging Face",
+        "url_label": "API 地址",
+        "url_placeholder": "https://api-inference.huggingface.co/v1",
+        "url_default": "https://api-inference.huggingface.co/v1",
+        "models": [
+            {"id": "meta-llama/Llama-3-70b-chat-hf", "name": "Llama 3 70B (推荐)"},
+            {"id": "mistralai/Mistral-7B-Instruct-v0.3", "name": "Mistral 7B"},
+            {"id": "Qwen/Qwen2-72B-Instruct", "name": "Qwen2 72B"},
+            {"id": "bigcode/starcoder2-15b", "name": "StarCoder2 15B"},
+        ],
+        "api_format": "huggingface",
+        "timeout": 120,
+    },
+    "novita": {
+        "name": "Novita AI",
+        "name_en": "Novita AI",
+        "url_label": "API 地址",
+        "url_placeholder": "https://api.novita.ai/v3",
+        "url_default": "https://api.novita.ai/v3",
+        "models": [
+            {"id": "novita-ai/llama-3-70b", "name": "Llama 3 70B (推荐)"},
+            {"id": "novita-ai/llama-3.1-8b", "name": "Llama 3.1 8B"},
+            {"id": "anthropic/claude-3.5-sonnet", "name": "Claude 3.5 Sonnet"},
+            {"id": "deepseek/deepseek-v3", "name": "DeepSeek V3"},
+            {"id": "meta-ai/codellama-34b", "name": "CodeLlama 34B"},
+        ],
+        "api_format": "openai",
+        "timeout": 60,
+    },
+    "azure": {
+        "name": "Azure OpenAI",
+        "name_en": "Azure OpenAI",
+        "url_label": "API 地址（资源名）",
+        "url_placeholder": "https://YOUR_RESOURCE.openai.azure.com",
+        "url_default": "https://YOUR_RESOURCE.openai.azure.com",
+        "models": [
+            {"id": "gpt-4o", "name": "GPT-4o (部署名)"},
+            {"id": "gpt-4o-mini", "name": "GPT-4o Mini"},
+            {"id": "gpt-4-turbo", "name": "GPT-4 Turbo"},
+            {"id": "gpt-35-turbo", "name": "GPT-3.5 Turbo"},
+        ],
+        "api_format": "azure",
+        "timeout": 90,
+    },
     "groq": {
         "name": "Groq",
+        "name_en": "Groq",
         "url_label": "API 地址",
         "url_placeholder": "https://api.groq.com/openai/v1",
         "url_default": "https://api.groq.com/openai/v1",
@@ -66,6 +190,7 @@ PROVIDERS = {
     },
     "openrouter": {
         "name": "OpenRouter",
+        "name_en": "OpenRouter",
         "url_label": "API 地址",
         "url_placeholder": "https://openrouter.ai/api/v1",
         "url_default": "https://openrouter.ai/api/v1",
@@ -109,22 +234,30 @@ class UnifiedAPIClient:
 
         mt = max_tokens or 8000
 
-        if self.api_format == "anthropic":
-            return self._chat_anthropic(messages, system, mt)
+        fmt = self.api_format
+        if fmt in ("anthropic", "anthropic_direct"):
+            return self._chat_anthropic(messages, system, mt, direct=(fmt == "anthropic_direct"))
+        elif fmt == "google":
+            return self._chat_google(messages, system, mt)
+        elif fmt == "cohere":
+            return self._chat_cohere(messages, system, mt)
+        elif fmt == "huggingface":
+            return self._chat_huggingface(messages, system, mt)
+        elif fmt == "azure":
+            return self._chat_azure(messages, system, mt)
         else:
             return self._chat_openai(messages, system, mt)
 
-    def _chat_anthropic(self, messages, system, max_tokens):
-        """Anthropic messages API (MiniMax)"""
+    def _chat_anthropic(self, messages, system, max_tokens, direct=False):
+        """Anthropic messages API - MiniMax uses /v1/messages; direct Anthropic uses same endpoint"""
         headers = {
             "Authorization": f"Bearer {self.api_key}",
             "Content-Type": "application/json",
             "anthropic-version": "2023-06-01",
-            "anthropic-dangerous-direct-path-access": "true",
         }
         body = {"model": self.model, "max_tokens": max_tokens, "messages": []}
         if system:
-            body["messages"].append({"role": "system", "content": system})
+            body["messages"].insert(0, {"role": "user", "content": system})
         body["messages"].extend(messages)
         try:
             r = requests.post(
@@ -146,7 +279,7 @@ class UnifiedAPIClient:
             return f"[Error: {e}]"
 
     def _chat_openai(self, messages, system, max_tokens):
-        """OpenAI chat completions API (DeepSeek, OpenAI, Groq, OpenRouter)"""
+        """OpenAI chat completions API - DeepSeek, OpenAI, Groq, OpenRouter, Mistral, Together, Novita"""
         headers = {
             "Authorization": f"Bearer {self.api_key}",
             "Content-Type": "application/json",
@@ -158,6 +291,144 @@ class UnifiedAPIClient:
         try:
             r = requests.post(
                 f"{self.base_url}/chat/completions",
+                json=body, headers=headers, timeout=self.timeout
+            )
+            if r.status_code == 200:
+                return r.json()["choices"][0]["message"]["content"]
+            elif r.status_code == 429:
+                return "[Error: Rate limited]"
+            else:
+                return f"[Error: {r.status_code}] {r.text[:200]}"
+        except requests.exceptions.Timeout:
+            return "[Error: 请求超时]"
+        except Exception as e:
+            return f"[Error: {e}]"
+
+    def _chat_google(self, messages, system, max_tokens):
+        """Google Gemini API via generativeLanguage.googleapis.com"""
+        headers = {
+            "Authorization": f"Bearer {self.api_key}",
+            "Content-Type": "application/json",
+        }
+        # Build contents from messages
+        contents = []
+        for m in messages:
+            role = "user" if m["role"] == "user" else "model"
+            parts = [{"text": m["content"]}]
+            contents.append({"role": role, "parts": parts})
+        if system:
+            contents.insert(0, {"role": "user", "parts": [{"text": system}]})
+        body = {
+            "contents": contents,
+            "generationConfig": {"maxOutputTokens": max_tokens},
+        }
+        try:
+            url = f"{self.base_url}/models/{self.model}:generateContent?key={self.api_key}"
+            r = requests.post(url, json=body, headers=headers, timeout=self.timeout)
+            if r.status_code == 200:
+                data = r.json()
+                candidates = data.get("candidates", [])
+                if candidates:
+                    content = candidates[0].get("content", {})
+                    parts = content.get("parts", [])
+                    return "".join(p.get("text", "") for p in parts)
+                return ""
+            elif r.status_code == 429:
+                return "[Error: Rate limited]"
+            else:
+                return f"[Error: {r.status_code}] {r.text[:200]}"
+        except requests.exceptions.Timeout:
+            return "[Error: 请求超时]"
+        except Exception as e:
+            return f"[Error: {e}]"
+
+    def _chat_cohere(self, messages, system, max_tokens):
+        """Cohere Chat API"""
+        headers = {
+            "Authorization": f"Bearer {self.api_key}",
+            "Content-Type": "application/json",
+            "Accept": "application/json",
+        }
+        # Convert messages format
+        chat_messages = []
+        for m in messages:
+            if m["role"] == "user":
+                chat_messages.append({"role": "User", "message": m["content"]})
+            else:
+                chat_messages.append({"role": "Chatbot", "message": m["content"]})
+        body = {
+            "model": self.model,
+            "message": chat_messages[-1]["message"] if chat_messages else "",
+            "chat_history": chat_messages[:-1],
+            "max_tokens": max_tokens,
+        }
+        try:
+            r = requests.post(
+                f"{self.base_url}/chat",
+                json=body, headers=headers, timeout=self.timeout
+            )
+            if r.status_code == 200:
+                return r.json().get("text", "")
+            elif r.status_code == 429:
+                return "[Error: Rate limited]"
+            else:
+                return f"[Error: {r.status_code}] {r.text[:200]}"
+        except requests.exceptions.Timeout:
+            return "[Error: 请求超时]"
+        except Exception as e:
+            return f"[Error: {e}]"
+
+    def _chat_huggingface(self, messages, system, max_tokens):
+        """HuggingFace Inference API"""
+        headers = {
+            "Authorization": f"Bearer {self.api_key}",
+            "Content-Type": "application/json",
+        }
+        # Build conversation format
+        inputs = []
+        if system:
+            inputs.append({"role": "system", "content": system})
+        for m in messages:
+            role = "user" if m["role"] == "user" else "assistant"
+            inputs.append({"role": role, "content": m["content"]})
+        body = {
+            "inputs": inputs,
+            "parameters": {"max_new_tokens": max_tokens, "return_full_text": False},
+        }
+        try:
+            r = requests.post(
+                f"{self.base_url}/chat/{self.model}",
+                json=body, headers=headers, timeout=self.timeout
+            )
+            if r.status_code == 200:
+                data = r.json()
+                if isinstance(data, list) and len(data) > 0:
+                    return data[0].get("generated_text", "")
+                elif isinstance(data, dict):
+                    return data.get("generated_text", "")
+                return str(data)
+            elif r.status_code == 429:
+                return "[Error: Rate limited]"
+            else:
+                return f"[Error: {r.status_code}] {r.text[:200]}"
+        except requests.exceptions.Timeout:
+            return "[Error: 请求超时]"
+        except Exception as e:
+            return f"[Error: {e}]"
+
+    def _chat_azure(self, messages, system, max_tokens):
+        """Azure OpenAI API"""
+        headers = {
+            "api-key": self.api_key,
+            "Content-Type": "application/json",
+        }
+        body = {"messages": [], "max_tokens": max_tokens}
+        if system:
+            body["messages"].insert(0, {"role": "system", "content": system})
+        body["messages"].extend(messages)
+        try:
+            r = requests.post(
+                f"{self.base_url}/chat/completions?api-version=2024-02-15-preview",
                 json=body, headers=headers, timeout=self.timeout
             )
             if r.status_code == 200:
