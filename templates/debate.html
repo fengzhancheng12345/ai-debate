@@ -838,13 +838,16 @@ function handleFinalAnswer(d) {
 
 // ==================== USER VOTE ====================
 function showUserVotePanel() {
+  // Only reset if user hasn't submitted yet — don't overwrite their vote
   const panel = document.getElementById('userVotePanel');
   panel.style.display = 'block';
-  userVoteSubmitted = false; userVoteChoice = null;
-  ['Sup','Against','Neutral'].forEach(c => { const b = document.getElementById('uv' + c); if (b) b.classList.remove('selected','sup','against','neutral'); });
-  document.getElementById('uvReason').style.display = 'none';
-  const sb = document.getElementById('uvSubmit'); if (sb) { sb.style.display = 'none'; sb.classList.remove('submitted'); sb.textContent = '提交我的投票'; }
-  const rv = document.getElementById('uvResult'); if (rv) rv.style.display = 'none';
+  if (!userVoteSubmitted) {
+    userVoteChoice = null;
+    ['Sup','Against','Neutral'].forEach(c => { const b = document.getElementById('uv' + c); if (b) b.classList.remove('selected','sup','against','neutral'); });
+    document.getElementById('uvReason').style.display = 'none';
+    const sb = document.getElementById('uvSubmit'); if (sb) { sb.style.display = 'none'; sb.classList.remove('submitted'); sb.textContent = '提交我的投票'; }
+    const rv = document.getElementById('uvResult'); if (rv) rv.style.display = 'none';
+  }
 }
 
 function selectUserVote(choice) {
