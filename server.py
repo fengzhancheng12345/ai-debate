@@ -754,7 +754,22 @@ async def health():
 
 
 def main():
-    cfg_desc = f"{client.provider}/{client.model}" if client.is_configured() else "NOT CONFIGURED"
+    # Block if no API is configured
+    if not client.is_configured():
+        print()
+        print("=" * 50)
+        print("  [错误] 未检测到有效的 API 配置")
+        print("=" * 50)
+        print()
+        print("请先配置 API Key:")
+        print(f"  配置文件: {CONFIG_FILE}")
+        print('  示例: {"api_key": "你的密钥", "provider": "minimax"}')
+        print()
+        print("支持的 API: MiniMax, DeepSeek, OpenAI, Claude")
+        print()
+        return
+    
+    cfg_desc = f"{client.provider}/{client.model}"
     print(f"Starting AI debate system v2.0 on 0.0.0.0:8098")
     print(f"API: {cfg_desc}")
     print(f"Access: http://localhost:8098/debate")
