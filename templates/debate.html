@@ -860,7 +860,7 @@ function handleEvent(d, sid) {
   else if (t === 'complete') { isRunning = false; if (evtSource) evtSource.close(); evtSource = null; addStatus('全部完成', 'done'); showUserVotePanelInPanel(); document.getElementById('exportBtn').style.display = 'flex'; resetUI(); }
 }
 function handleGroupsCreated(d) {
-  if (d.vote_options && d.vote_options.length > 0) { voteOptions = d.vote_options; }
+  if ((d.data?.vote_options || d.vote_options || []).length > 0) { voteOptions = d.data?.vote_options || d.vote_options; }
   (d.data?.groups || d.groups || []).forEach(g => { activeGroups[g.id] = { ...g, _votes: { sup: 0, against: 0, neutral: 0 } }; });
   const content = document.getElementById('debateContent'); content.innerHTML = '';
   const bar = document.createElement('div'); bar.className = 'groups-bar';
@@ -874,19 +874,20 @@ function handleGroupsCreated(d) {
       '<div class="group-result" id="result-' + g.id + '" style="display:none;"></div>';
     content.appendChild(card);
   });
-  buildVoteTracker(d.groups);
+  buildVoteTracker(d.data?.groups || d.groups || []);
 }
 function handleRoundSummary(d) {
   const content = document.getElementById('debateContent');
   const card = document.createElement('div'); card.className = 'round-summary-card';
+  const rnd = d.data?.round ?? d.round;
   card.innerHTML =
     '<div class="round-summary-header">' +
-    '  <span>\u{1F4CB} 第 ' + d.round + ' 轮要点</span>' +
-    '  <span class="round-summary-label">' + (d.label||'') + '</span></div>' +
-    '<div class="round-summary-body">' + formatContent(d.summary) + '</div>';
+    '  <span>\u{1F4CB} 第 ' + rnd + ' 轮要点</span>' +
+    '  <span class="round-summary-label">' + (d.data?.label || d.label || '') + '</span></div>' +
+    '<div class="round-summary-body">' + formatContent(d.data?.summary || d.summary || '') + '</div>';
   content.appendChild(card);
   scrollToBottom(true);
-  addStatus('第 ' + d.round + ' 轮结束', 'done');
+  addStatus('第 ' + rnd + ' 轮结束', 'done');
 }
 function updateTrackerGroup(groupId, votes) {
   if (!votes) return;
@@ -910,7 +911,8 @@ function handleResearching(d) {
 }
 function handleResearchComplete(d) {
   const grid = document.getElementById('sources-grid');
-  if (grid && d.sources) { grid.innerHTML = ''; d.sources.forEach(src => { const b = document.createElement('div'); b.className = 'source-badge done'; b.innerHTML = '<span class="check">✓</span><span>' + src + '</span>'; grid.appendChild(b); }); }
+  const sources = d.data?.sources || d.sources || [];
+  if (grid && sources.length > 0) { grid.innerHTML = ''; sources.forEach(src => { const b = document.createElement('div'); b.className = 'source-badge done'; b.innerHTML = '<span class="check">✓</span><span>' + src + '</span>'; grid.appendChild(b); }); }
   addStatus('资料收集完成', 'done');
 }
 function handleAgentStart(d) {
@@ -919,8 +921,8 @@ function handleAgentStart(d) {
   const entry = document.createElement('div'); entry.className = 'agent-entry';
   entry.id = 'agent-entry-' + (d.data?.group_key || d.group_id) + '-' + (d.data?.agent_key || d.agent_key);
   entry.innerHTML = '<div class="agent-meta">' +
-    '<div class="agent-avatar" style="border-color:' + (d.color || '#6366f1') + ';background:rgba(' + hexToRgb(d.color || '#6366f1') + ',0.1);">' + d.emoji + '</div>' +
-    '<span class="agent-name" style="color:' + (d.color || '#6366f1') + ';">' + d.agent_name + '</span>' +
+    '<div class="agent-avatar" style="border-color:' + (d.data?.color || d.color || '#6366f1') + ';background:rgba(' + hexToRgb(d.data?.color || d.color || '#6366f1') + ',0.1);">' + (d.data?.emoji || d.emoji || '🤖') + '</div>' +
+    '<span class="agent-name" style="color:' + (d.data?.color || d.color || '#6366f1') + ';">' + (d.data?.agent_name || d.agent_name || 'AI') + '</span>' +
     '<span class="agent-role">第' + (d.data?.round || d.round || 1) + '轮</span>' +
     '<span class="spinner" style="margin-left:auto;"></span></div>' +
     '<div class="agent-content" id="agent-content-' + (d.data?.group_key || d.group_id) + '-' + (d.data?.agent_key || d.agent_key) + '"><span style="color:var(--text2);font-size:13px;">思考中...</span></div>';
@@ -933,10 +935,21 @@ function handleAgentMessage(d) {
   const entry = document.getElementById('agent-entry-' + (d.data?.group_key || d.group_id) + '-' + (d.data?.agent_key || d.agent_key));
   if (entry) { const sp = entry.querySelector('.spinner'); if (sp) sp.remove(); }
   if (contentEl) {
-    contentEl.innerHTML = (d.content && d.content.startsWith('[Error:'))
-      ? '<span style="color:var(--red);font-size:13px;">' + d.content + '</span>'
-      : formatContent(d.content);
-    // Don't auto-scroll here — let user read while messages stream in
+    contentEl.innerHTML = (d.data?.content && d.data.content.startsWith('[Error:'))
+      ? '<span style="color:var(--red);font-size:13px;">' + d.data.content + '</span>'
+      : formatContent(d.data?.content || d.content || '');
+    scrollToBottom();
+  } else {
+    // Agent entry not yet created — create it on demand
+    const containerId = 'agents-' + (d.data?.group_key || d.group_id);
+    let c = document.getElementById(containerId);
+    if (!c) { var groupCard = document.getElementById('group-' + (d.data?.group_key || d.group_id)); if (groupCard) c = groupCard.querySelector('.agents-container'); }
+    if (c) {
+      var entry = document.createElement('div'); entry.className = 'agent-entry';
+      entry.id = 'agent-entry-' + (d.data?.group_key || d.group_id) + '-' + (d.data?.agent_key || d.agent_key);
+      entry.innerHTML = '<div class="agent-meta"><div class="agent-avatar" style="border-color:' + (d.data?.color || d.color || '#6366f1') + ';">' + (d.data?.emoji || d.emoji || '🤖') + '</div><span class="agent-name" style="color:' + (d.data?.color || d.color || '#6366f1') + ';">' + (d.data?.agent_name || d.agent_name || 'AI') + '</span><span class="spinner" style="margin-left:auto;"></span></div><div class="agent-content" id="agent-content-' + (d.data?.group_key || d.group_id) + '-' + (d.data?.agent_key || d.agent_key) + '">' + formatContent(d.data?.content || d.content || '') + '</div>';
+      c.appendChild(entry);
+    }
   }
 }
 function handleGroupRoundDone(d) {
@@ -990,34 +1003,50 @@ function handleGroupVoting(d) {
 }
 function handleVoteCast(d) {
   const votingEl = document.getElementById('voting-' + (d.data?.group_key || d.group_id));
+  const vote = d.data?.vote || d.vote;
+  const agent_name = d.data?.agent_name || d.agent_name;
+  const reason = d.data?.reason || d.reason;
   if (votingEl) {
     const sp = votingEl.querySelector('.spinner-sm'); if (sp) sp.parentElement.style.display = 'none';
     const firstDiv = votingEl.querySelector('div'); if (firstDiv && firstDiv.textContent.includes('投票中')) firstDiv.remove();
     const vc = document.createElement('div'); vc.className = 'vote-card';
-    const icon = d.vote === '支持' ? '👍' : d.vote === '反对' ? '👎' : '🤔';
-    const cls = d.vote === '支持' ? 'sup' : d.vote === '反对' ? 'against' : 'neutral';
-    vc.innerHTML = '<span class="vote-emoji">' + icon + '</span><span class="vote-name">' + d.agent_name + '</span><span class="vote-tag ' + cls + '">' + d.vote + '</span>';
+    const icon = vote === '支持' ? '👍' : vote === '反对' ? '👎' : '🤔';
+    const cls = vote === '支持' ? 'sup' : vote === '反对' ? 'against' : 'neutral';
+    vc.innerHTML = '<span class="vote-emoji">' + icon + '</span><span class="vote-name">' + agent_name + '</span><span class="vote-tag ' + cls + '">' + vote + '</span>';
     votingEl.appendChild(vc);
-    if (d.reason) { const r = document.createElement('div'); r.className = 'vote-reason'; r.textContent = d.reason.substring(0, 100); votingEl.appendChild(r); }
+    if (reason) { const r = document.createElement('div'); r.className = 'vote-reason'; r.textContent = reason.substring(0, 100); votingEl.appendChild(r); }
   }
   if (activeGroups[d.data?.group_key || d.group_id]) {
-    const v = activeGroups[d.group_id]._votes;
-    if (d.vote === '支持') v.sup++; else if (d.vote === '反对') v.against++; else v.neutral++;
+    const v = activeGroups[d.data?.group_key || d.group_id]._votes;
+    const vote_val = d.data?.vote || d.vote || '';
+    // Map vote option values to sup/against/neutral counters
+    // First option -> sup, second -> against, rest -> neutral
+    const opts = voteOptions.length > 0 ? voteOptions : [{value: 'pro', label: '支持'}, {value: 'con', label: '反对'}];
+    const voteIdx = opts.findIndex(o => o.value === vote_val);
+    if (voteIdx === 0) v.sup++;
+    else if (voteIdx === 1) v.against++;
+    else v.neutral++;
     updateVoteTracker(d.data?.group_key || d.group_id, v);
   }
 }
 function handleGroupVoteResult(d) {
-  const resultEl = document.getElementById('result-' + (d.data?.group_key || d.group_id));
-  if (resultEl) { resultEl.style.display = 'block'; const icon = (d.data?.group_vote || d.group_vote) === '支持' ? '✅' : (d.data?.group_vote || d.group_vote) === '反对' ? '❌' : '⚖️';up_vote === '反对' ? '❌' : '⚖️'; resultEl.innerHTML = icon + ' ' + d.group_name + ' 共识: <strong>' + d.group_vote + '</strong>'; }
-  const badge = document.getElementById('badge-' + (d.data?.group_key || d.group_id)); if (badge) badge.className = 'group-badge done';
-  const statusEl = document.getElementById('tracker-status-' + (d.data?.group_key || d.group_id));
-  if (statusEl) { const icon = d.group_vote === '支持' ? '✅' : d.group_vote === '反对' ? '❌' : '⚖️'; statusEl.textContent = icon + ' ' + d.group_vote; statusEl.style.color = d.group_vote === '支持' ? 'var(--green)' : d.group_vote === '反对' ? 'var(--red)' : 'var(--yellow)'; }
-  if (d.data?.votes || d.votes) { updateTrackerGroup(d.data?.group_key || d.group_id, d.data?.votes || d.votes); }
-  // Update vote tracker bar with final votes from server
-  if (d.data?.votes || d.votes) { updateTrackerGroup(d.data?.group_key || d.group_id, d.data?.votes || d.votes); }
-  // Update vote tracker bar with final votes from server
-  if (d.data?.votes || d.votes) { updateTrackerGroup(d.data?.group_key || d.group_id, d.data?.votes || d.votes); }
-  if (d.data?.votes || d.votes) { updateTrackerGroup(d.data?.group_key || d.group_id, d.data?.votes || d.votes); }
+  const gk = d.data?.group_key || d.group_id;
+  const gv = d.data?.group_vote || d.group_vote;
+  const gn = d.data?.group_name || d.group_name;
+  const resultEl = document.getElementById('result-' + gk);
+  if (resultEl) {
+    const icon = gv === '支持' ? '✅' : gv === '反对' ? '❌' : '⚖️';
+    resultEl.style.display = 'block';
+    resultEl.innerHTML = icon + ' ' + gn + ' 共识: <strong>' + gv + '</strong>';
+  }
+  const badge = document.getElementById('badge-' + gk); if (badge) badge.className = 'group-badge done';
+  const statusEl = document.getElementById('tracker-status-' + gk);
+  if (statusEl) {
+    const icon = gv === '支持' ? '✅' : gv === '反对' ? '❌' : '⚖️';
+    statusEl.textContent = icon + ' ' + gv;
+    statusEl.style.color = gv === '支持' ? 'var(--green)' : gv === '反对' ? 'var(--red)' : 'var(--yellow)';
+  }
+  if (d.data?.votes || d.votes) { updateTrackerGroup(gk, d.data?.votes || d.votes); }
 }
 // ==================== FINAL ====================
 function buildTracker(groups) {
