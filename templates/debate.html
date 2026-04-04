@@ -623,6 +623,8 @@ async function analyzeTopic() {
     document.getElementById('topicInputArea').style.display = 'none';
     document.getElementById('dynamicFormArea').style.display = 'block';
     document.getElementById('analyzedTopicBanner').textContent = '✓ ' + topic;
+    btn.disabled = false;
+    btn.innerHTML = '✓ 分析完成';
     document.querySelector('.input-form').scrollTop = 0;
   } catch(err) {
     const sa = document.getElementById('statusArea');
@@ -690,7 +692,7 @@ function resetForm() {
   const dfc = document.getElementById('dynamicFieldsContainer');
   if (dfc) dfc.innerHTML = '';
   const btn = document.getElementById('analyzeBtn');
-  if (btn) btn.disabled = false;
+  if (btn) { btn.disabled = false; btn.innerHTML = '🤖 开始分析话题'; }
   const sdb = document.getElementById('startDebateBtn');
   if (sdb) sdb.disabled = false;
   const exp = document.getElementById('exportBtn');
