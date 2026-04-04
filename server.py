@@ -685,6 +685,8 @@ def stream_debate(session_id: str):
                 q.put(event)
             q.put(None)
         except Exception as e:
+            import traceback
+            traceback.print_exc()
             error[0] = e
             q.put(None)
 

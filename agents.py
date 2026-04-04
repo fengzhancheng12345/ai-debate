@@ -358,7 +358,9 @@ def run_debate_stream(session_id: str, client):
     # Build rich context for the planner
     rich_context = build_debate_context(topic, user_input)
 
-    planner_prompt = f"""用户话题：{topic}
+    planner_prompt = """用户话题：{topic}
+
+用户话题：{topic}
 {rich_context}
 
 你是一个专业的辩论策划专家，擅长将复杂话题拆解成多角度的辩论小组。
@@ -373,7 +375,7 @@ def run_debate_stream(session_id: str, client):
 
 2. **小组设计要精准**
    - 通用话题：2-3个小组，覆盖不同视角（支持/质疑/综合）
-   - 需要数据的热门话题（如电车、投资、科技）：优先安排需要数据的分析师角色
+   - 需要数据的热门话题（如电车，投资，科技）：优先安排需要数据的分析师角色
    - 个人决策类话题（如买车、买房）：设计了解用户情况的顾问角色
    - 争议话题（如政策、伦理）：设计正反方小组
 
@@ -393,12 +395,12 @@ def run_debate_stream(session_id: str, client):
       ]
     }}
   ],
-  "total_rounds": 3,
+  "total_rounds": {total_rounds},
   "discussion_focus": "本轮讨论的重点",
   "vote_options": [
-    {"value": "pro", "label": "支持", "description": "认同该观点"},
-    {"value": "con", "label": "反对", "description": "不认同该观点"},
-    {"value": "neutral", "label": "中立", "description": "保持客观不表态"}
+    {{"value": "pro", "label": "支持", "description": "认同该观点"}},
+    {{"value": "con", "label": "反对", "description": "不认同该观点"}},
+    {{"value": "neutral", "label": "中立", "description": "保持客观不表态"}}
   ]
 }}
 
@@ -410,7 +412,9 @@ def run_debate_stream(session_id: str, client):
 投票选项必须与辩题相关：
 - 金钱类话题：["100万以下", "100-300万", "300-500万", "500万以上"]
 - 是非类话题：["支持", "反对", "中立"]
-- 程度类话题：["非常认同", "认同", "中立", "反对", "强烈反对"]"""
+- 程度类话题：["非常认同", "认同", "中立", "反对", "强烈反对"]
+""".format(topic=topic, rich_context=rich_context, total_rounds=3)
+
     planner_response = call_with_retry(
             [{"role": "user", "content": planner_prompt}],
             system="你是一个辩论策划专家，输出纯JSON。",
