@@ -54,6 +54,7 @@ class DebateSession:
     final_answer: Optional[str] = None
     total_rounds: int = 3
     current_phase: str = "planning"  # planning, debating, voting, summarizing, done
+    vote_options: List[str] = field(default_factory=list)  # e.g. ["100万以下", "100-300万", "500万以上"]
     events: List[Dict] = field(default_factory=list)  # SSE events for streaming
     
     def cleanup(self):
@@ -68,6 +69,7 @@ class SessionStore:
         self.sessions: Dict[str, DebateSession] = {}
         self.lock = threading.Lock()
         self.expiry_seconds = 3600  # Sessions expire after 1 hour
+        self._start_cleanup()  # Start background cleanup thread
     
     def create_session(self, topic: str, user_input: str) -> str:
         session_id = str(uuid.uuid4())[:8]
@@ -81,7 +83,6 @@ class SessionStore:
         with self.lock:
             self.sessions[session_id] = session
         # Clean up old sessions
-        self._cleanup_expired()
         return session_id
     
     def get_session(self, session_id: str) -> Optional[DebateSession]:
@@ -95,22 +96,35 @@ class SessionStore:
                 del self.sessions[session_id]
     
     def _cleanup_expired(self):
-        """Remove expired sessions"""
-        now = time.time()
-        expired = []
-        for sid, sess in self.sessions.items():
-            # Check if session has been active for too long
+        """Remove expired sessions (background thread)"""
+        while True:
             try:
-                created = datetime.strptime(sess.created_at, "%Y-%m-%d %H:%M:%S")
-                age = (datetime.now() - created).total_seconds()
-                if age > self.expiry_seconds:
-                    expired.append(sid)
-            except:
-                pass
-        for sid in expired:
-            sess = self.sessions.pop(sid, None)
-            if sess:
-                sess.cleanup()
+                import time as _time
+                _time.sleep(300)  # Check every 5 minutes
+                now = time.time()
+                expired = []
+                with self.lock:
+                    for sid, sess in self.sessions.items():
+                        try:
+                            created = datetime.strptime(sess.created_at, "%Y-%m-%d %H:%M:%S")
+                            age = (datetime.now() - created).total_seconds()
+                            if age > self.expiry_seconds:
+                                expired.append(sid)
+                        except:
+                            pass
+                    for sid in expired:
+                        sess = self.sessions.pop(sid, None)
+                        if sess:
+                            sess.cleanup()
+                    if expired:
+                        print(f"[Store] Cleaned {len(expired)} expired sessions")
+            except Exception as e:
+                print(f"[Store] Cleanup error: {e}")
+
+    def _start_cleanup(self):
+        t = threading.Thread(target=self._cleanup_expired, daemon=True)
+        t.start()
+        print("[Store] Cleanup thread started (TTL=%ds)" % self.expiry_seconds)
 
 # Global store instance
 store = SessionStore()

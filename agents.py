@@ -212,15 +212,26 @@ def build_agent_prompt(agent: Dict, topic: str, conversation_history: str = "", 
     
     return system, user
 
-def extract_vote(text: str) -> str:
-    """Extract vote from agent response"""
+def extract_vote(text: str, options: list = None) -> str:
+    """Extract vote from agent response using dynamic options."""
+    if options is None:
+        options = ["支持", "反对", "中立"]
     text_lower = text.lower()
-    if "支持" in text_lower or "同意" in text_lower or "赞成" in text_lower:
-        return "支持"
-    elif "反对" in text_lower or "拒绝" in text_lower or "否定" in text_lower:
-        return "反对"
-    else:
-        return "中立"
+    best_match = None
+    best_score = -1
+    for opt in options:
+        opt_lower = opt.lower()
+        if opt_lower in text_lower:
+            score = text_lower.count(opt_lower)
+            if score > best_score:
+                best_score = score
+                best_match = opt
+    if best_match is None:
+        if "支持" in text_lower or "同意" in text_lower or "赞成" in text_lower: return "支持"
+        elif "反对" in text_lower or "拒绝" in text_lower or "否定" in text_lower: return "反对"
+        elif "中立" in text_lower or "不表态" in text_lower: return "中立"
+        return options[0] if options else "中立"
+    return best_match
 
 def _fallback_plan(topic: str) -> dict:
     """Fallback plan if planner fails to return JSON"""
@@ -246,7 +257,12 @@ def _fallback_plan(topic: str) -> dict:
             }
         ],
         "total_rounds": 3,
-        "discussion_focus": "全面深入讨论"
+        "discussion_focus": "全面深入讨论",
+        "vote_options": [
+            {"value": "pro", "label": "支持", "description": "认同该观点"},
+            {"value": "con", "label": "反对", "description": "不认同该观点"},
+            {"value": "neutral", "label": "中立", "description": "保持客观不表态"}
+        ]
     }
 
 def _build_history(messages: List[Message]) -> str:
@@ -378,8 +394,23 @@ def run_debate_stream(session_id: str, client):
     }}
   ],
   "total_rounds": 3,
-  "discussion_focus": "本轮讨论的重点"
-}}"""
+  "discussion_focus": "本轮讨论的重点",
+  "vote_options": [
+    {"value": "pro", "label": "支持", "description": "认同该观点"},
+    {"value": "con", "label": "反对", "description": "不认同该观点"},
+    {"value": "neutral", "label": "中立", "description": "保持客观不表态"}
+  ]
+}}
+
+请严格按JSON格式回答。vote_options是你设计的投票选项（3-6个），每个选项：
+- value: 简短英文标识符（如 pro/con/neutral 或 money_low/money_mid 等）
+- label: 中文显示文本（如"支持/反对/中立"或具体选项如"100万以下"）
+- description: 1句话说明含义
+
+投票选项必须与辩题相关：
+- 金钱类话题：["100万以下", "100-300万", "300-500万", "500万以上"]
+- 是非类话题：["支持", "反对", "中立"]
+- 程度类话题：["非常认同", "认同", "中立", "反对", "强烈反对"]"""
     planner_response = call_with_retry(
             [{"role": "user", "content": planner_prompt}],
             system="你是一个辩论策划专家，输出纯JSON。",
@@ -397,6 +428,10 @@ def run_debate_stream(session_id: str, client):
     
     if plan and "groups" in plan:
         groups_data = plan["groups"]
+        if plan and "vote_options" in plan:
+            session.vote_options = [opt.get("value") or opt.get("label") for opt in plan["vote_options"]]
+        else:
+            session.vote_options = ["支持", "反对", "中立"]
     else:
         groups_data = [
             {"name": "理性分析组", "description": "从逻辑和事实角度分析", "agents": [
@@ -438,7 +473,8 @@ def run_debate_stream(session_id: str, client):
         "groups": [{"id": g.id, "name": g.name, "description": g.description, "agents": [
             {"key": a.key, "name": a.name, "emoji": a.emoji, "color": a.color}
             for a in g.agents
-        ]} for g in session.groups]
+        ]} for g in session.groups],
+        "vote_options": session.vote_options
     }}
     
     # Step 1.5: Research phase - fetch real data from multiple sources
@@ -623,6 +659,8 @@ def run_debate_stream(session_id: str, client):
         summary_text = "\n\n".join(summary_lines)
         
         for agent in group.agents:
+            opts = session.vote_options if session.vote_options else ["支持", "反对", "中立"]
+            opts_str = " / ".join(opts)
             vote_prompt = f"""【辩题】
 {topic}
 
@@ -632,7 +670,8 @@ def run_debate_stream(session_id: str, client):
 【你的任务】
 经过上面的讨论，作为{agent.name}，你的最终立场是什么？
 
-请明确表态：支持 / 反对 / 中立
+请从以下选项中选择一个：
+{opts_str}
 并简要说明原因（50字以内）
 如果引用了具体数据，请用方括号标注来源，如：[Wikipedia]、[FRED]、[Bing]
 
@@ -641,7 +680,8 @@ def run_debate_stream(session_id: str, client):
             system_prompt = f"""你是一个被人格化的AI角色。
 你的身份：{agent.name} {agent.emoji}
 
-请直接给出你的立场：支持、反对或中立，并用中文说明原因（50字以内）。
+请从以下选项中选择一个并直接回答：{opts_str}
+然后用中文说明原因（50字以内）。
 如果引用了具体数据，请用方括号标注来源，如：[Wikipedia]、[FRED]、[Bing]。"""
             
             response = call_with_retry(
@@ -650,14 +690,7 @@ def run_debate_stream(session_id: str, client):
                 client=client
             )
             
-            # Extract vote from response
-            text = response.lower()
-            if "支持" in text or "同意" in text or "赞成" in text:
-                vote = "支持"
-            elif "反对" in text or "拒绝" in text or "否定" in text:
-                vote = "反对"
-            else:
-                vote = "中立"
+            vote = extract_vote(response, opts)
             
             agent.vote = vote
             agent.vote_reason = response[:200]

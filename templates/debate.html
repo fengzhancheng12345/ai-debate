@@ -535,7 +535,7 @@ body {
 <script>
 // ==================== STATE ====================
 let currentSession = null, evtSource = null, isRunning = false, activeGroups = {};
-let currentRound = 0, currentTopic = '', currentFields = [];
+let currentRound = 0, currentTopic = '', currentFields = [], voteOptions = [];
 let debateCompletedData = null, userVoteSubmitted = false, userVoteChoice = null, userVoteReason = '';
 let _activeStreamId = 0; //递增token，每开启新辩论+1，用于丢弃旧session的事件
 
@@ -557,6 +557,10 @@ async function analyzeTopic() {
     document.querySelector('.input-form').scrollTop = 0;
   } catch(err) { alert('分析出错: ' + err.message); }
   finally { btn.disabled = false; btn.innerHTML = '🤖 重新分析话题'; }
+}
+function handleGroupStart(d) {
+  var badge = document.getElementById('badge-' + d.group_id);
+  if (badge) badge.className = 'group-badge active';
 }
 
 function renderDynamicForm(fields) {
@@ -725,6 +729,7 @@ function handleEvent(evt, streamId) {
   if (t === 'error') { showError(d.message); return; }
   if (t === 'phase') { addPhaseBanner(d.title); addStatus(d.phase + ' 阶段', 'active'); }
   else if (t === 'planner_message') { addPhaseBanner('🧠 策划: ' + d.content.substring(0, 100)); }
+  else if (t === 'group_start') { handleGroupStart(d); }
   else if (t === 'groups_created') { handleGroupsCreated(d); }
   else if (t === 'researching') { handleResearching(d); }
   else if (t === 'research_complete') { handleResearchComplete(d); }
@@ -742,6 +747,7 @@ function handleEvent(evt, streamId) {
 }
 
 function handleGroupsCreated(d) {
+  if (d.vote_options && d.vote_options.length > 0) { voteOptions = d.vote_options; }
   d.groups.forEach(g => { activeGroups[g.id] = { ...g, _votes: { sup: 0, against: 0, neutral: 0 } }; });
   const content = document.getElementById('debateContent'); content.innerHTML = '';
   const bar = document.createElement('div'); bar.className = 'groups-bar';
@@ -840,7 +846,6 @@ function handleAgentDone(d) {
   const card = document.getElementById('group-' + d.group_id); if (card) card.classList.remove('active');
 }
 
-function markGroupDone(groupId) { const badge = document.getElementById('badge-' + groupId); if (badge) badge.className = 'group-badge'; }
 
 // ==================== VOTE TRACKER ====================
 function buildVoteTracker(groups) {
@@ -910,6 +915,15 @@ function handleGroupVoteResult(d) {
   const badge = document.getElementById('badge-' + d.group_id); if (badge) badge.className = 'group-badge done';
   const statusEl = document.getElementById('tracker-status-' + d.group_id);
   if (statusEl) { const icon = d.group_vote === '支持' ? '✅' : d.group_vote === '反对' ? '❌' : '⚖️'; statusEl.textContent = icon + ' ' + d.group_vote; statusEl.style.color = d.group_vote === '支持' ? 'var(--green)' : d.group_vote === '反对' ? 'var(--red)' : 'var(--yellow)'; }
+  if (d.votes) { updateTrackerGroup(d.group_id, d.votes); }
+
+  // Update vote tracker bar with final votes from server
+  if (d.votes) { updateTrackerGroup(d.group_id, d.votes); }
+
+  // Update vote tracker bar with final votes from server
+  if (d.votes) { updateTrackerGroup(d.group_id, d.votes); }
+
+  if (d.votes) { updateTrackerGroup(d.group_id, d.votes); }
 }
 
 // ==================== FINAL ====================
@@ -937,7 +951,10 @@ function buildTracker(groups) {
 function handleFinalAnswer(d) {
   debateCompletedData = d;
   let totalSup = 0, totalAgainst = 0, totalNeutral = 0;
-  d.groups_summary.forEach(g => { g.members.forEach(m => { if (m.vote === '支持') totalSup++; else if (m.vote === '反对') totalAgainst++; else totalNeutral++; }); });
+  var voteOpts = voteOptions.length > 0 ? voteOptions : ['支持', '反对', '中立'];
+  var supKws = ['支持', '认同', '非常认同', '赞成'];
+  var conKws = ['反对', '强烈反对', '拒绝'];
+  d.groups_summary.forEach(function(g) { g.members.forEach(function(m) { var v = m.vote || ''; var isSup = supKws.some(function(k) { return v.indexOf(k) >= 0; }); var isCon = conKws.some(function(k) { return v.indexOf(k) >= 0; }); if (isSup) totalSup++; else if (isCon) totalAgainst++; else totalNeutral++; }); });
   const total = totalSup + totalAgainst + totalNeutral || 1;
   const supPct = (totalSup / total * 100).toFixed(0), againstPct = (totalAgainst / total * 100).toFixed(0), neutralPct = (totalNeutral / total * 100).toFixed(0);
   const area = document.getElementById('debateContent');
@@ -971,25 +988,73 @@ function handleFinalAnswer(d) {
 
 // ==================== USER VOTE ====================
 function showUserVotePanel() {
-  // Only reset if user hasn't submitted yet — don't overwrite their vote
+  // Build dynamic vote buttons based on current voteOptions
+  // Default to ["支持", "反对", "中立"] if none set
+  const opts = voteOptions.length > 0 ? voteOptions : ["支持", "反对", "中立"];
   const panel = document.getElementById('userVotePanel');
   panel.style.display = 'block';
+
+  // Update header
+  const header = panel.querySelector('.user-vote-header');
+  if (header) {
+    if (voteOptions.length > 0) {
+      header.textContent = '🗳️ 你支持哪个选项？';
+    } else {
+      header.textContent = '🗳️ 你的立场是什么？';
+    }
+  }
+
+  // Rebuild vote buttons
+  const btnContainer = panel.querySelector('.user-vote-buttons');
+  if (btnContainer) {
+    btnContainer.innerHTML = '';
+    opts.forEach(function(opt) {
+      var btn = document.createElement('button');
+      btn.className = 'user-vote-btn';
+      btn.dataset.choice = opt;
+      btn.innerHTML = '<span class="emoji">' + getOptionEmoji(opt) + '</span><span class="label">' + opt + '</span>';
+      btn.onclick = (function(o) { return function() { selectUserVote(o); }; })(opt);
+      btnContainer.appendChild(btn);
+    });
+  }
+
+  // Reset selection state
   if (!userVoteSubmitted) {
     userVoteChoice = null;
-    ['Sup','Against','Neutral'].forEach(c => { const b = document.getElementById('uv' + c); if (b) b.classList.remove('selected','sup','against','neutral'); });
-    document.getElementById('uvReason').style.display = 'none';
-    const sb = document.getElementById('uvSubmit'); if (sb) { sb.style.display = 'none'; sb.classList.remove('submitted'); sb.textContent = '提交我的投票'; }
-    const rv = document.getElementById('uvResult'); if (rv) rv.style.display = 'none';
+    var btns = btnContainer.querySelectorAll('.user-vote-btn');
+    btns.forEach(function(b) { b.classList.remove('selected', 'sup', 'against', 'neu'); });
   }
+}
+
+function getOptionEmoji(opt) {
+  var e = getOptionEmoji;
+  if (!e.map) {
+    e.map = {
+      '支持': '👍', '反对': '👎', '中立': '😐', '中立（不表态）': '😐',
+      '非常认同': '🙌', '认同': '👍', '反对': '👎', '强烈反对': '👎',
+      'pro': '👍', 'con': '👎', 'neutral': '😐'
+    };
+    // Money options
+    var moneyOpts = ['100万以下', '100-300万', '300-500万', '500万以上', '100万-200万', '200万-500万'];
+    moneyOpts.forEach(function(m) { e.map[m] = '💰'; });
+  }
+  return e.map[opt] || '📌';
 }
 
 function selectUserVote(choice) {
   if (userVoteSubmitted) return;
   userVoteChoice = choice;
-  ['Sup','Against','Neutral'].forEach(c => { const b = document.getElementById('uv' + c); if (b) b.classList.remove('selected','sup','against','neutral'); });
-  const cls = choice === '支持' ? 'sup' : choice === '反对' ? 'against' : 'neutral';
-  const btn = document.getElementById(choice === '支持' ? 'uvSup' : choice === '反对' ? 'uvAgainst' : 'uvNeutral');
-  if (btn) btn.classList.add('selected', cls);
+  document.querySelectorAll('.user-vote-btn').forEach(function(b) { b.classList.remove('selected','sup','against','neutral'); });
+  document.querySelectorAll('.user-vote-btn').forEach(function(b) {
+    if (b.dataset.choice === choice) {
+      b.classList.add('selected');
+      var supKws = ['支持', '认同', '非常认同', '赞成'];
+      var conKws = ['反对', '强烈反对', '拒绝'];
+      if (supKws.some(function(k) { return choice.indexOf(k) >= 0; })) b.classList.add('sup');
+      else if (conKws.some(function(k) { return choice.indexOf(k) >= 0; })) b.classList.add('against');
+      else b.classList.add('neutral');
+    }
+  });
   document.getElementById('uvReason').style.display = 'block';
   const sb = document.getElementById('uvSubmit'); if (sb) sb.style.display = 'block';
 }
@@ -1545,15 +1610,8 @@ async function saveApiConfig() {
 })();
 
 function showUserVotePanelInPanel() {
-  const panel = document.getElementById('userVotePanel'); panel.style.display = 'block';
-  if (userVoteSubmitted) return;
-  userVoteChoice = null;
-  ['Sup', 'Against', 'Neutral'].forEach(c => { const b = document.getElementById('uv' + c); if (b) b.classList.remove('selected', 'sup', 'against', 'neutral'); });
-  document.getElementById('uvReason').style.display = 'none';
-  const sb = document.getElementById('uvSubmit'); if (sb) { sb.style.display = 'none'; sb.classList.remove('submitted'); sb.textContent = '提交我的投票'; }
-  const rv = document.getElementById('uvResult'); if (rv) rv.style.display = 'none';
+  showUserVotePanel();
 }
-
 function _onScroll() {
   const area = document.getElementById('debateArea');
   if (!area) return;
