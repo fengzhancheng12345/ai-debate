@@ -1,10 +1,50 @@
+# Byte-compiled / optimized
 __pycache__/
 *.pyc
 *.pyo
-.env
+*.pyd
+
+# Virtual environments
 venv/
-.DS_Store
-*.db
+.venv/
+env/
+
+# Environment
+.env
+.env.local
+.env.*.local
+
+# Config with secrets
 config.py
 config.json
-.env
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Temp / debug scripts (dev-only)
+*.bak
+*.ps1
+*.bat
+temp/
+tmp/
+*.tmp
+
+# Backup HTML files
+*.restored.html
+*_restored.html
+
+# Startup helpers (use server.py directly)
+start.py
+restart.bat
+start_server*.ps1
+run_server.py
+manage.py
+
+# Build artifacts
+build/
+dist/
+*.egg-info/
+
+# Logs
+*.log
