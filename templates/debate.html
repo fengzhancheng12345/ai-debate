@@ -604,6 +604,10 @@ function resetForm() {
   const vt = document.getElementById('voteTrackerTop');
   if (vt) { vt.style.display = 'none'; vt.innerHTML = ''; }
 
+  // Also clear debateArea to remove stats/final-card/comparison
+  const da = document.getElementById('debateArea');
+  if (da) da.innerHTML = '';
+
   // Reset topic chip
   const chip = document.getElementById('topicChip');
   if (chip) { chip.classList.remove('visible'); chip.textContent = ''; }
@@ -734,7 +738,7 @@ function handleEvent(evt, streamId) {
   else if (t === 'vote_cast') { handleVoteCast(d); }
   else if (t === 'group_vote_result') { handleGroupVoteResult(d); }
   else if (t === 'final_answer') { handleFinalAnswer(d); }
-  else if (t === 'complete') { isRunning = false; if (evtSource) evtSource.close(); addStatus('全部完成', 'done'); showUserVotePanel(); document.getElementById('exportBtn').style.display = 'flex'; resetUI(); }
+  else if (t === 'complete') { isRunning = false; if (evtSource) evtSource.close(); addStatus('全部完成', 'done'); showUserVotePanelInPanel(); document.getElementById('exportBtn').style.display = 'flex'; resetUI(); }
 }
 
 function handleGroupsCreated(d) {
@@ -936,7 +940,7 @@ function handleFinalAnswer(d) {
   d.groups_summary.forEach(g => { g.members.forEach(m => { if (m.vote === '支持') totalSup++; else if (m.vote === '反对') totalAgainst++; else totalNeutral++; }); });
   const total = totalSup + totalAgainst + totalNeutral || 1;
   const supPct = (totalSup / total * 100).toFixed(0), againstPct = (totalAgainst / total * 100).toFixed(0), neutralPct = (totalNeutral / total * 100).toFixed(0);
-  const area = document.getElementById('debateArea');
+  const area = document.getElementById('debateContent');
 
   const statsCard = document.createElement('div'); statsCard.className = 'stats-summary';
   statsCard.innerHTML = '<div class="stats-title">📊 AI 投票统计 <span style="font-size:12px;color:var(--text2);font-weight:400;">(' + total + ' 位角色)</span></div>' +
@@ -1411,6 +1415,10 @@ function stopDebate() {
   // Hide vote tracker
   const vt = document.getElementById('voteTrackerTop');
   if (vt) { vt.style.display = 'none'; vt.innerHTML = ''; }
+
+  // Clear debateArea (stats, final-card, comparison from previous debate)
+  const da = document.getElementById('debateArea');
+  if (da) da.innerHTML = '';
 
   // Hide user vote panel
   const uvp = document.getElementById('userVotePanel');
