@@ -532,6 +532,1038 @@ body {
   </div>
 </div>
 
-<script>// ==================== STATE ====================let currentSession = null, evtSource = null, isRunning = false, activeGroups = {};let currentRound = 0, currentTopic = '', currentFields = [], voteOptions = [];let debateCompletedData = null, userVoteSubmitted = false, userVoteChoice = null, userVoteReason = '';let _activeStreamId = 0; //递增token，每开启新辩论+1，用于丢弃旧session的事件// ==================== DYNAMIC FORM ====================async function analyzeTopic() {  const topic = document.getElementById('topicInput').value.trim();  if (!topic) { alert('请输入话题'); return; }  const btn = document.getElementById('analyzeBtn');  btn.disabled = true;  btn.innerHTML = '<span class="spinner-sm"></span> AI 分析中...';  try {    const resp = await fetch('/api/debate/analyze', { method: 'POST', signal: AbortSignal.timeout(30000), headers: {'Content-Type': 'application/json'}, body: JSON.stringify({topic}) });    const data = await resp.json();    if (data.error) {      const sa = document.getElementById('statusArea');      if (sa) { sa.innerHTML = '<div class="status-item status-error" style="color:var(--red);background:rgba(248,113,113,0.1);border:1px solid var(--red);border-radius:8px;padding:10px 14px;margin:4px 0;"><span style="margin-right:6px;">❌</span>分析失败: ' + data.error + '<br><span style="font-size:12px;color:var(--text2);">请检查 API 配置或网络连接</span></div>'; }      return;    }    currentTopic = topic; currentFields = data.fields || []; renderDynamicForm(currentFields);    document.getElementById('topicInputArea').style.display = 'none';    document.getElementById('dynamicFormArea').style.display = 'block';    document.getElementById('analyzedTopicBanner').textContent = '✓ ' + topic;    document.querySelector('.input-form').scrollTop = 0;  } catch(err) {    const sa = document.getElementById('statusArea');    if (sa) { sa.innerHTML = '<div class="status-item status-error" style="color:var(--red);background:rgba(248,113,113,0.1);border:1px solid var(--red);border-radius:8px;padding:10px 14px;margin:4px 0;"><span style="margin-right:6px;">❌</span>分析失败: ' + err.message + '<br><span style="font-size:12px;color:var(--text2);">请检查 API 配置或网络连接</span></div>'; }  }}function handleGroupStart(d) {  var badge = document.getElementById('badge-' + d.group_id);  if (badge) badge.className = 'group-badge active';}function renderDynamicForm(fields) {  const container = document.getElementById('dynamicFieldsContainer');  container.innerHTML = '';  fields.forEach(field => {    const div = document.createElement('div');    const label = document.createElement('label');    label.innerHTML = field.label + (field.description ? '<span class="field-desc">— ' + field.description + '</span>' : '');    let input = '';    if (field.type === 'select') {      const opts = (field.options || []).map(opt => '<option value="' + opt + '">' + opt + '</option>').join('');      input = '<select id="field_' + field.key + '" name="' + field.key + '">' + opts + '</select>';    } else if (field.type === 'textarea') {      input = '<textarea id="field_' + field.key + '" name="' + field.key + '" rows="2" placeholder="' + (field.placeholder || '') + '"></textarea>';    } else {      input = '<input type="text" id="field_' + field.key + '" name="' + field.key + '" placeholder="' + (field.placeholder || '') + '" />';    }    div.appendChild(label);    div.insertAdjacentHTML('beforeend', input);    container.appendChild(div);  });}function resetForm() {  stopDebate(); // full state + SSE cleanup  currentTopic = ''; currentFields = [];  // Reset debate display area  const content = document.getElementById('debateContent');  if (content) {    content.innerHTML = '<div class="welcome-screen" id="welcomeScreen">' +      '<div class="welcome-emoji">🎙️</div>' +      '<div class="welcome-title">AI 辩论系统 v2.0</div>' +      '<div class="welcome-sub">输入话题，多个 AI 角色展开真实辩论，收集真实数据，并进行投票统计</div>' +      '<div class="welcome-features">' +      '<div class="welcome-feature"><span>🤖</span> 多智能体</div>' +      '<div class="welcome-feature"><span>🔍</span> 实时研究</div>' +      '<div class="welcome-feature"><span>🗳️</span> 投票统计</div>' +      '<div class="welcome-feature"><span>📥</span> 报告导出</div>' +      '</div></div>';  }  // Reset vote tracker  const vt = document.getElementById('voteTrackerTop');  if (vt) { vt.style.display = 'none'; vt.innerHTML = ''; }  // Also clear debateArea to remove stats/final-card/comparison  const da = document.getElementById('debateArea');  if (da) da.innerHTML = '';  // Reset topic chip  const chip = document.getElementById('topicChip');  if (chip) { chip.classList.remove('visible'); chip.textContent = ''; }  // Reset form UI  const tia = document.getElementById('topicInputArea');  if (tia) tia.style.display = 'block';  const dfa = document.getElementById('dynamicFormArea');  if (dfa) dfa.style.display = 'none';  const ti = document.getElementById('topicInput');  if (ti) { ti.value = ''; ti.disabled = false; }  const dfc = document.getElementById('dynamicFieldsContainer');  if (dfc) dfc.innerHTML = '';  const btn = document.getElementById('analyzeBtn');  if (btn) btn.disabled = false;  const sdb = document.getElementById('startDebateBtn');  if (sdb) sdb.disabled = false;  const exp = document.getElementById('exportBtn');  if (exp) exp.style.display = 'none';  const uvp = document.getElementById('userVotePanel');  if (uvp) uvp.style.display = 'none';  // Reset smart scroll  _scrolledUp = false;  if (_jumpBtn) { _jumpBtn.style.display = 'none'; }  // Reset status area  const sa = document.getElementById('statusArea');  if (sa) sa.innerHTML = '<div class="status-item"><div class="status-dot"></div> 等待发起辩论...</div>';}// ==================== DEBATE ====================function startDebate() {  console.log('[DEBUG] startDebate called, isRunning=' + isRunning);  const topic = currentTopic || document.getElementById('topicInput').value.trim();  console.log('[DEBUG] topic:', topic);  if (!topic) { alert('请先输入话题'); return; }  // Guard: prevent starting while a debate is already running  if (isRunning) {    if (!confirm('辩论正在进行中，确定要中断并开始新辩论吗？')) return;  }  stopDebate(); // clean up any existing debate first  const parts = [topic];  currentFields.forEach(field => {    const el = document.getElementById('field_' + field.key);    if (el) { const val = el.value.trim(); if (val) parts.push('【' + field.label + '】' + val); }  });  const user_input = parts.join('\n');  const chip = document.getElementById('topicChip');  chip.textContent = topic; chip.classList.add('visible');  const ws = document.getElementById('welcomeScreen');  if (ws) ws.style.display = 'none';  // Show loading state in debateContent immediately  const content = document.getElementById('debateContent');  content.innerHTML = '<div style="text-align:center;padding:60px 20px;color:var(--text2);"><div class="spinner" style="margin:0 auto 16px;"></div><div style="font-size:15px;color:var(--text);margin-bottom:8px;">🧠 主策划分析中...</div><div style="font-size:13px;">正在设计辩论结构，请稍候</div></div>';  document.getElementById('voteTrackerTop').style.display = 'none';  document.getElementById('voteTrackerTop').innerHTML = '';  document.getElementById('userVotePanel').style.display = 'none';  userVoteSubmitted = false; userVoteChoice = null;  debateCompletedData = null;  document.getElementById('exportBtn').style.display = 'none';  /* keep loading state */  document.getElementById('statusArea').innerHTML = '';  currentSession = null; activeGroups = {}; currentRound = 0; isRunning = true;  // Immediately show loading feedback  const sdb = document.getElementById('startDebateBtn');  if (sdb) { sdb.disabled = true; sdb.innerHTML = '<span class="spinner-sm"></span> 正在启动...'; }  document.getElementById('topicInput').disabled = true;  // Show "正在连接..." in statusArea  const sa = document.getElementById('statusArea');  if (sa) { sa.innerHTML = '<div class="status-item active"><div class="spinner"></div> 正在连接辩论系统...</div>'; }  fetch('/api/debate/start', { method: 'POST', signal: AbortSignal.timeout(30000), headers: {'Content-Type': 'application/json'}, body: JSON.stringify({topic, user_input}) })  .then(r => r.json())  .then(data => {    if (data.error) {      console.log('[DEBUG] showError called with:', data.error);    showError(data.error);      isRunning = false;      document.getElementById('analyzeBtn').disabled = false;      if (sdb) { sdb.disabled = false; sdb.innerHTML = '🚀 开始辩论'; }      document.getElementById('topicInput').disabled = false;      return;    }    currentSession = data.session_id;    console.log('[DEBUG] calling connectStream with session:', currentSession);    connectStream(currentSession);  })  .catch(err => { showError('启动失败: ' + err.message + '（请检查 API 配置）'); isRunning = false; resetUI(); });}function connectStream(sessionId) {  // Close any existing EventSource before creating a new one  if (evtSource) {    evtSource.close();    evtSource = null;  }  _activeStreamId++; // increment — this session's token  const myStreamId = _activeStreamId;  evtSource = new EventSource('/api/debate/' + sessionId + '/stream');  evtSource.onmessage = function(e) {    // [DEBUG] SSE received    console.log('[DEBUG] SSE event:', e.data ? e.data.substring(0,100) : 'empty');    // Discard events from a previous/old stream session    if (myStreamId !== _activeStreamId) return;    clearTimeout(connectionTimeout);    try { handleEvent(JSON.parse(e.data), myStreamId); } catch(err) { console.error('Parse error:', err, e.data); }  };  evtSource.onerror = function() {    console.log('[DEBUG] EventSource onerror');    if (myStreamId !== _activeStreamId) return;    clearTimeout(connectionTimeout);    if (isRunning) {      isRunning = false;      const sa = document.getElementById('statusArea');      if (sa) { sa.innerHTML = '<div class="status-item status-error" style="color:var(--red);background:rgba(248,113,113,0.1);border:1px solid var(--red);border-radius:8px;padding:10px 14px;margin:4px 0;"><span style="margin-right:6px;">❌</span>连接中断（网络问题或服务器错误）<br><span style="font-size:12px;color:var(--text2);">点击"开始辩论"按钮重试</span></div>'; }    }    evtSource.close(); evtSource = null;  };    evtSource.addEventListener('stream_end', function() {    if (myStreamId !== _activeStreamId) return;    clearTimeout(connectionTimeout);    isRunning = false; evtSource.close(); evtSource = null;    addStatus('✅ 辩论完成', 'done'); resetUI();  });  // Connection timeout - if no events received within 15s, show error  var connectionTimeout = setTimeout(function() {    if (myStreamId !== _activeStreamId) return;    evtSource.close(); evtSource = null; isRunning = false;    var sa = document.getElementById('statusArea');    if (sa) { sa.innerHTML = '<div class="status-item status-error" style="color:var(--red);background:rgba(248,113,113,0.1);border:1px solid var(--red);border-radius:8px;padding:10px 14px;margin:4px 0;"><span style="margin-right:6px;">❌</span>连接超时（服务器未响应）<br><span style="font-size:12px;color:var(--text2);">请检查 API 配置是否正确，或稍后重试</span></div>'; }    resetUI();  }, 15000);  // Cancel timeout when first event arrives  var _origOnmsg = evtSource.onmessage;  evtSource.onmessage = function(e) {    clearTimeout(connectionTimeout);    _origOnmsg.call(evtSource, e);  };  const t = evt.type, d = evt.data || evt;  if (t === 'ping' || t === 'stream_end') return;  if (t === 'error') { showError(d.message); return; }  if (t === 'phase') { addPhaseBanner(d.title); addStatus(d.phase + ' 阶段', 'active'); }  else if (t === 'planner_message') { addPhaseBanner('🧠 策划: ' + d.content.substring(0, 100)); }  else if (t === 'group_start') { handleGroupStart(d); }  else if (t === 'groups_created') { handleGroupsCreated(d); }  else if (t === 'researching') { handleResearching(d); }  else if (t === 'research_complete') { handleResearchComplete(d); }  else if (t === 'round_start') { currentRound = d.round; addPhaseBanner('🔄 第 ' + d.round + ' 轮讨论 — ' + (d.title || '')); addStatus('第 ' + d.round + ' 轮进行中', 'active'); }  else if (t === 'agent_start') { handleAgentStart(d); }  else if (t === 'agent_message') { handleAgentMessage(d); }  else if (t === 'agent_done') { handleAgentDone(d); }  else if (t === 'group_round_done') { handleGroupRoundDone(d); }  else if (t === 'round_summary') { handleRoundSummary(d); }  else if (t === 'group_voting') { handleGroupVoting(d); }  else if (t === 'vote_cast') { handleVoteCast(d); }  else if (t === 'group_vote_result') { handleGroupVoteResult(d); }  else if (t === 'final_answer') { handleFinalAnswer(d); }  else if (t === 'complete') { isRunning = false; if (evtSource) evtSource.close(); addStatus('全部完成', 'done'); showUserVotePanelInPanel(); document.getElementById('exportBtn').style.display = 'flex'; resetUI(); }}function handleGroupsCreated(d) {  if (d.vote_options && d.vote_options.length > 0) { voteOptions = d.vote_options; }  d.groups.forEach(g => { activeGroups[g.id] = { ...g, _votes: { sup: 0, against: 0, neutral: 0 } }; });  const content = document.getElementById('debateContent'); content.innerHTML = '';  const bar = document.createElement('div'); bar.className = 'groups-bar';  d.groups.forEach(g => { const badge = document.createElement('div'); badge.className = 'group-badge'; badge.id = 'badge-' + g.id; badge.textContent = g.name; bar.appendChild(badge); });  content.appendChild(bar);  d.groups.forEach(g => {    const card = document.createElement('div'); card.className = 'group-card'; card.id = 'group-' + g.id;    card.innerHTML = '<div class="group-header"><span>' + g.name + '</span><span class="group-desc">' + g.description + '</span></div>' +      '<div class="agents-container" id="agents-' + g.id + '"></div>' +      '<div class="voting-section" id="voting-' + g.id + '" style="display:none;padding:12px;"></div>' +      '<div class="group-result" id="result-' + g.id + '" style="display:none;"></div>';    content.appendChild(card);  });  buildVoteTracker(d.groups);}function handleRoundSummary(d) {  const content = document.getElementById('debateContent');  const card = document.createElement('div'); card.className = 'round-summary-card';  card.innerHTML =    '<div class="round-summary-header">' +    '  <span>\u{1F4CB} 第 ' + d.round + ' 轮要点</span>' +    '  <span class="round-summary-label">' + (d.label||'') + '</span></div>' +    '<div class="round-summary-body">' + formatContent(d.summary) + '</div>';  content.appendChild(card);  scrollToBottom(true);  addStatus('第 ' + d.round + ' 轮结束', 'done');}function updateTrackerGroup(groupId, votes) {  if (!votes) return;  const total = votes.sup + votes.against + votes.neutral || 1;  const sp = (votes.sup / total * 100).toFixed(0), ap = (votes.against / total * 100).toFixed(0), np = (votes.neutral / total * 100).toFixed(0);  const bar = document.getElementById('bar-' + groupId);  if (bar) {    const s = bar.querySelector('.vote-bar-sup'), a = bar.querySelector('.vote-bar-against'), n = bar.querySelector('.vote-bar-neutral');    if (s) s.style.width = sp + '%'; if (a) a.style.width = ap + '%'; if (n) n.style.width = np + '%';  }}function handleResearching(d) {  const content = document.getElementById('debateContent');  const banner = content.querySelector('.phase-banner'); if (banner) banner.remove();  const card = document.createElement('div'); card.className = 'research-card';  card.id = 'research-card';  card.innerHTML = '<div class="research-header"><span style="font-size:20px;">🔍</span><span>正在全网收集真实资料...</span><span class="spinner-sm" style="margin-left:auto;"></span></div>' +    '<div style="font-size:12px;color:var(--text2);margin-bottom:4px;">实时抓取：网络搜索 · 财经数据 · 学术论文 · 新闻资讯</div>' +    '<div class="sources-grid" id="sources-grid"></div>';  content.appendChild(card); addStatus('收集资料中', 'active');}function handleResearchComplete(d) {  const grid = document.getElementById('sources-grid');  if (grid && d.sources) { grid.innerHTML = ''; d.sources.forEach(src => { const b = document.createElement('div'); b.className = 'source-badge done'; b.innerHTML = '<span class="check">✓</span><span>' + src + '</span>'; grid.appendChild(b); }); }  addStatus('资料收集完成', 'done');}function handleAgentStart(d) {  const container = document.getElementById('agents-' + d.group_id); if (!container) return;  const card = document.getElementById('group-' + d.group_id); if (card) card.classList.add('active');  const entry = document.createElement('div'); entry.className = 'agent-entry';  entry.id = 'agent-entry-' + d.group_id + '-' + d.agent_key;  entry.innerHTML = '<div class="agent-meta">' +    '<div class="agent-avatar" style="border-color:' + (d.color || '#6366f1') + ';background:rgba(' + hexToRgb(d.color || '#6366f1') + ',0.1);">' + d.emoji + '</div>' +    '<span class="agent-name" style="color:' + (d.color || '#6366f1') + ';">' + d.agent_name + '</span>' +    '<span class="agent-role">第' + d.round + '轮</span>' +    '<span class="spinner" style="margin-left:auto;"></span></div>' +    '<div class="agent-content" id="agent-content-' + d.group_id + '-' + d.agent_key + '"><span style="color:var(--text2);font-size:13px;">思考中...</span></div>';  container.appendChild(entry);  const badge = document.getElementById('badge-' + d.group_id); if (badge) badge.className = 'group-badge active';  scrollToBottom();}function handleAgentMessage(d) {  const contentEl = document.getElementById('agent-content-' + d.group_id + '-' + d.agent_key);  const entry = document.getElementById('agent-entry-' + d.group_id + '-' + d.agent_key);  if (entry) { const sp = entry.querySelector('.spinner'); if (sp) sp.remove(); }  if (contentEl) {    contentEl.innerHTML = (d.content && d.content.startsWith('[Error:'))      ? '<span style="color:var(--red);font-size:13px;">' + d.content + '</span>'      : formatContent(d.content);    // Don't auto-scroll here — let user read while messages stream in  }}function handleGroupRoundDone(d) {  const badge = document.getElementById('badge-' + d.group_id);  if (badge) badge.className = 'group-badge';  updateTrackerGroup(d.group_id, d.votes);}function handleAgentDone(d) {  const entry = document.getElementById('agent-entry-' + d.group_id + '-' + d.agent_key);  if (entry) { const sp = entry.querySelector('.spinner'); if (sp) sp.remove(); }  const card = document.getElementById('group-' + d.group_id); if (card) card.classList.remove('active');}// ==================== VOTE TRACKER ====================function buildVoteTracker(groups) {  const tracker = document.getElementById('voteTrackerTop');  tracker.style.display = 'block';  tracker.innerHTML = '<div class="vote-tracker-header"><div class="vote-tracker-title">📊 实时投票监控</div><button class="vote-tracker-toggle" id="trackerToggle" onclick="toggleVoteTracker()">收起 ▲</button></div><div class="vote-tracker-body" id="trackerBody"></div>';  const body = document.getElementById('trackerBody');  groups.forEach(g => {    const row = document.createElement('div'); row.className = 'vote-group-row';    row.id = 'tracker-row-' + g.id;    row.innerHTML = '<span class="vote-group-name">' + g.name + '</span>' +      '<div class="vote-bar-container" id="bar-' + g.id + '"><div class="vote-bar-sup" style="width:0%"></div><div class="vote-bar-against" style="width:0%"></div><div class="vote-bar-neutral" style="width:0%"></div></div>' +      '<span class="vote-group-status" id="tracker-status-' + g.id + '" style="color:var(--text2);">投票中</span>';    body.appendChild(row);  });}function updateVoteTracker(groupId, votes) {  const total = votes.sup + votes.against + votes.neutral; if (total === 0) return;  const supPct = (votes.sup / total * 100).toFixed(0);  const againstPct = (votes.against / total * 100).toFixed(0);  const neutralPct = (votes.neutral / total * 100).toFixed(0);  const bar = document.getElementById('bar-' + groupId);  if (bar) {    const s = bar.querySelector('.vote-bar-sup'), a = bar.querySelector('.vote-bar-against'), n = bar.querySelector('.vote-bar-neutral');    if (s) s.style.width = supPct + '%'; if (a) a.style.width = againstPct + '%'; if (n) n.style.width = neutralPct + '%';  }}function toggleVoteTracker() {  const body = document.getElementById('trackerBody'), btn = document.getElementById('trackerToggle');  if (body.style.display === 'none') { body.style.display = 'flex'; btn.textContent = '收起 ▲'; }  else { body.style.display = 'none'; btn.textContent = '展开 ▼'; }}// ==================== GROUP VOTING ====================function handleGroupVoting(d) {  const votingEl = document.getElementById('voting-' + d.group_id);  if (votingEl) { votingEl.style.display = 'block'; votingEl.innerHTML = '<div style="font-size:12px;color:var(--text2);margin-bottom:8px;display:flex;align-items:center;gap:6px;"><span class="spinner-sm"></span> 投票中...</div>'; }  addStatus(d.group_name + ' 投票中', 'active');  const statusEl = document.getElementById('tracker-status-' + d.group_id);  if (statusEl) { statusEl.textContent = '投票中...'; statusEl.style.color = 'var(--yellow)'; }}function handleVoteCast(d) {  const votingEl = document.getElementById('voting-' + d.group_id);  if (votingEl) {    const sp = votingEl.querySelector('.spinner-sm'); if (sp) sp.parentElement.style.display = 'none';    const firstDiv = votingEl.querySelector('div'); if (firstDiv && firstDiv.textContent.includes('投票中')) firstDiv.remove();    const vc = document.createElement('div'); vc.className = 'vote-card';    const icon = d.vote === '支持' ? '👍' : d.vote === '反对' ? '👎' : '🤔';    const cls = d.vote === '支持' ? 'sup' : d.vote === '反对' ? 'against' : 'neutral';    vc.innerHTML = '<span class="vote-emoji">' + icon + '</span><span class="vote-name">' + d.agent_name + '</span><span class="vote-tag ' + cls + '">' + d.vote + '</span>';    votingEl.appendChild(vc);    if (d.reason) { const r = document.createElement('div'); r.className = 'vote-reason'; r.textContent = d.reason.substring(0, 100); votingEl.appendChild(r); }  }  if (activeGroups[d.group_id]) {    const v = activeGroups[d.group_id]._votes;    if (d.vote === '支持') v.sup++; else if (d.vote === '反对') v.against++; else v.neutral++;    updateVoteTracker(d.group_id, v);  }}function handleGroupVoteResult(d) {  const resultEl = document.getElementById('result-' + d.group_id);  if (resultEl) { resultEl.style.display = 'block'; const icon = d.group_vote === '支持' ? '✅' : d.group_vote === '反对' ? '❌' : '⚖️'; resultEl.innerHTML = icon + ' ' + d.group_name + ' 共识: <strong>' + d.group_vote + '</strong>'; }  const badge = document.getElementById('badge-' + d.group_id); if (badge) badge.className = 'group-badge done';  const statusEl = document.getElementById('tracker-status-' + d.group_id);  if (statusEl) { const icon = d.group_vote === '支持' ? '✅' : d.group_vote === '反对' ? '❌' : '⚖️'; statusEl.textContent = icon + ' ' + d.group_vote; statusEl.style.color = d.group_vote === '支持' ? 'var(--green)' : d.group_vote === '反对' ? 'var(--red)' : 'var(--yellow)'; }  if (d.votes) { updateTrackerGroup(d.group_id, d.votes); }  // Update vote tracker bar with final votes from server  if (d.votes) { updateTrackerGroup(d.group_id, d.votes); }  // Update vote tracker bar with final votes from server  if (d.votes) { updateTrackerGroup(d.group_id, d.votes); }  if (d.votes) { updateTrackerGroup(d.group_id, d.votes); }}// ==================== FINAL ====================function buildTracker(groups) {  const tracker = document.getElementById('voteTrackerTop');  tracker.style.display = 'block';  tracker.innerHTML =    '<div class="vote-tracker-header">' +    '  <div class="vote-tracker-title">\u{1F4CA} 实时投票监控</div>' +    '  <button class="vote-tracker-toggle" id="trackerToggle" onclick="toggleTracker()">收起 \u{25B2}</button></div>' +    '<div class="vote-tracker-body" id="trackerBody"></div>';  const body = document.getElementById('trackerBody');  groups.forEach(g => {    const row = document.createElement('div'); row.className = 'vote-group-row'; row.id = 'tracker-row-' + g.id;    row.innerHTML =      '<span class="vote-group-name">' + g.name + '</span>' +      '<div class="vote-bar-container" id="bar-' + g.id + '">' +      '  <div class="vote-bar-sup" style="width:0%"></div><div class="vote-bar-against" style="width:0%"></div><div class="vote-bar-neutral" style="width:0%"></div></div>' +      '<span class="vote-group-status" id="tracker-status-' + g.id + '" style="color:var(--text2);">投票中</span>';    body.appendChild(row);  });}function handleFinalAnswer(d) {  debateCompletedData = d;  let totalSup = 0, totalAgainst = 0, totalNeutral = 0;  var voteOpts = voteOptions.length > 0 ? voteOptions : ['支持', '反对', '中立'];  var supKws = ['支持', '认同', '非常认同', '赞成'];  var conKws = ['反对', '强烈反对', '拒绝'];  d.groups_summary.forEach(function(g) { g.members.forEach(function(m) { var v = m.vote || ''; var isSup = supKws.some(function(k) { return v.indexOf(k) >= 0; }); var isCon = conKws.some(function(k) { return v.indexOf(k) >= 0; }); if (isSup) totalSup++; else if (isCon) totalAgainst++; else totalNeutral++; }); });  const total = totalSup + totalAgainst + totalNeutral || 1;  const supPct = (totalSup / total * 100).toFixed(0), againstPct = (totalAgainst / total * 100).toFixed(0), neutralPct = (totalNeutral / total * 100).toFixed(0);  const area = document.getElementById('debateContent');  const statsCard = document.createElement('div'); statsCard.className = 'stats-summary';  statsCard.innerHTML = '<div class="stats-title">📊 AI 投票统计 <span style="font-size:12px;color:var(--text2);font-weight:400;">(' + total + ' 位角色)</span></div>' +    '<div class="stats-grid"><div class="stat-item"><div class="stat-number green">' + totalSup + '</div><div class="stat-label">👍 支持</div></div>' +    '<div class="stat-item"><div class="stat-number red">' + totalAgainst + '</div><div class="stat-label">👎 反对</div></div>' +    '<div class="stat-item"><div class="stat-number yellow">' + totalNeutral + '</div><div class="stat-label">🤔 中立</div></div></div>' +    '<div class="stats-bar-container"><div class="stats-bar-sup" style="width:' + supPct + '%"></div><div class="stats-bar-against" style="width:' + againstPct + '%"></div><div class="stats-bar-neutral" style="width:' + neutralPct + '%"></div></div>' +    '<div class="stats-bar-labels"><span>👍 ' + totalSup + ' (' + supPct + '%)</span><span>👎 ' + totalAgainst + ' (' + againstPct + '%)</span><span>🤔 ' + totalNeutral + ' (' + neutralPct + '%)</span></div>';  area.appendChild(statsCard);  d.groups_summary.forEach(g => {    const card = document.createElement('div'); card.className = 'group-result'; card.style.cssText = 'display:block;margin:8px 0 0;';    const icon = g.vote === '支持' ? '✅' : g.vote === '反对' ? '❌' : '⚖️';    const membersHtml = g.members.map(m => { const c = m.vote === '支持' ? 'sup' : m.vote === '反对' ? 'against' : 'neutral'; return '<span class="vote-tag ' + c + '" style="margin-right:4px;">' + m.emoji + ' ' + m.name + '=' + m.vote + '</span>'; }).join('');    card.innerHTML = icon + ' <strong>' + g.name + '</strong>：' + membersHtml + ' → 共识: <strong>' + g.vote + '</strong>';    area.appendChild(card);  });  const finalCard = document.createElement('div'); finalCard.className = 'final-card';  finalCard.innerHTML = '<div class="final-title">🎯 主策划最终总结</div>' +    '<div class="final-content">' + formatContent(d.summary) + '</div>' +    '<div class="export-area">' +    '<button class="btn-export" onclick="exportDebate(\'md\')">📄 导出 Markdown</button>' +    '<button class="btn-export" onclick="exportDebate(\'txt\')">📝 导出 TXT</button></div>';  area.appendChild(finalCard);  scrollToBottom();}// ==================== USER VOTE ====================function showUserVotePanel() {  // Build dynamic vote buttons based on current voteOptions  // Default to ["支持", "反对", "中立"] if none set  const opts = voteOptions.length > 0 ? voteOptions : ["支持", "反对", "中立"];  const panel = document.getElementById('userVotePanel');  panel.style.display = 'block';  // Update header  const header = panel.querySelector('.user-vote-header');  if (header) {    if (voteOptions.length > 0) {      header.textContent = '🗳️ 你支持哪个选项？';    } else {      header.textContent = '🗳️ 你的立场是什么？';    }  }  // Rebuild vote buttons  const btnContainer = panel.querySelector('.user-vote-buttons');  if (btnContainer) {    btnContainer.innerHTML = '';    opts.forEach(function(opt) {      var btn = document.createElement('button');      btn.className = 'user-vote-btn';      btn.dataset.choice = opt;      btn.innerHTML = '<span class="emoji">' + getOptionEmoji(opt) + '</span><span class="label">' + opt + '</span>';      btn.onclick = (function(o) { return function() { selectUserVote(o); }; })(opt);      btnContainer.appendChild(btn);    });  }  // Reset selection state  if (!userVoteSubmitted) {    userVoteChoice = null;    var btns = btnContainer.querySelectorAll('.user-vote-btn');    btns.forEach(function(b) { b.classList.remove('selected', 'sup', 'against', 'neu'); });  }}function getOptionEmoji(opt) {  var e = getOptionEmoji;  if (!e.map) {    e.map = {      '支持': '👍', '反对': '👎', '中立': '😐', '中立（不表态）': '😐',      '非常认同': '🙌', '认同': '👍', '反对': '👎', '强烈反对': '👎',      'pro': '👍', 'con': '👎', 'neutral': '😐'    };    // Money options    var moneyOpts = ['100万以下', '100-300万', '300-500万', '500万以上', '100万-200万', '200万-500万'];    moneyOpts.forEach(function(m) { e.map[m] = '💰'; });  }  return e.map[opt] || '📌';}function selectUserVote(choice) {  if (userVoteSubmitted) return;  userVoteChoice = choice;  document.querySelectorAll('.user-vote-btn').forEach(function(b) { b.classList.remove('selected','sup','against','neutral'); });  document.querySelectorAll('.user-vote-btn').forEach(function(b) {    if (b.dataset.choice === choice) {      b.classList.add('selected');      var supKws = ['支持', '认同', '非常认同', '赞成'];      var conKws = ['反对', '强烈反对', '拒绝'];      if (supKws.some(function(k) { return choice.indexOf(k) >= 0; })) b.classList.add('sup');      else if (conKws.some(function(k) { return choice.indexOf(k) >= 0; })) b.classList.add('against');      else b.classList.add('neutral');    }  });  document.getElementById('uvReason').style.display = 'block';  const sb = document.getElementById('uvSubmit'); if (sb) sb.style.display = 'block';}function submitUserVote() {  if (!userVoteChoice || userVoteSubmitted) return;  userVoteSubmitted = true;  userVoteReason = (document.getElementById('uvReasonText') && document.getElementById('uvReasonText').value) || '';  const sb = document.getElementById('uvSubmit');  if (sb) { sb.classList.add('submitted'); sb.textContent = '✅ 已提交'; }  const rv = document.getElementById('uvResult');  if (rv) { rv.style.display = 'block'; rv.innerHTML = '你的投票：<strong>' + userVoteChoice + '</strong>（' + userVoteReason.substring(0, 60) + ')'; }  if (debateCompletedData && userVoteChoice) showUserVsAIComparison();}function showUserVsAIComparison() {  if (!debateCompletedData || !userVoteChoice) return;  const area = document.getElementById('debateArea');  let totalSup = 0, totalAgainst = 0, totalNeutral = 0, aiMajority = '';  debateCompletedData.groups_summary.forEach(g => {    g.members.forEach(m => { if (m.vote === '支持') totalSup++; else if (m.vote === '反对') totalAgainst++; else totalNeutral++; });  });  const total = totalSup + totalAgainst + totalNeutral || 1;  if (totalSup >= totalAgainst && totalSup >= totalNeutral) aiMajority = '支持';  else if (totalAgainst >= totalSup && totalAgainst >= totalNeutral) aiMajority = '反对';  else aiMajority = '中立';  const card = document.createElement('div'); card.className = 'comparison-card';  const userCls = userVoteChoice === '支持' ? 'sup' : userVoteChoice === '反对' ? 'against' : 'neutral';  const aiCls = aiMajority === '支持' ? 'sup' : aiMajority === '反对' ? 'against' : 'neutral';  const agree = userVoteChoice === aiMajority;  card.innerHTML =    '<div class="comparison-title">⚖️ 人机投票对比</div>' +    '<div class="comparison-row"><span class="comparison-label">🤖 AI</span><span class="comparison-badge ' + aiCls + '">' + aiMajority + ' (' + ((aiMajority === '支持' ? totalSup : aiMajority === '反对' ? totalAgainst : totalNeutral) / total * 100).toFixed(0) + '%)</span></div>' +    '<div class="comparison-row"><span class="comparison-label">👤 你</span><span class="comparison-badge ' + userCls + ' user">' + userVoteChoice + '</span></div>' +    '<div class="comparison-row" style="border:none;padding-top:10px;">' +    '<span class="comparison-label"></span>' +    '<span style="font-size:13px;color:' + (agree ? 'var(--green)' : 'var(--yellow)') + ';font-weight:700;">' + (agree ? '🎉 你与 AI 大多数立场一致！' : '🤔 你与 AI 大多数立场不同，思考一下差异在哪里？') + '</span>' +    '</div>';  area.appendChild(card);  scrollToBottom();}// ==================== EXPORT ====================function exportDebate(format) {  if (!debateCompletedData) return;  const d = debateCompletedData;  let text = '';  if (format === 'md') {    text = '# ' + d.topic + '\n\n';    text += '## AI 投票统计\n';    let totalSup = 0, totalAgainst = 0, totalNeutral = 0;    d.groups_summary.forEach(g => { g.members.forEach(m => { if (m.vote === '支持') totalSup++; else if (m.vote === '反对') totalAgainst++; else totalNeutral++; }); });    const total = totalSup + totalAgainst + totalNeutral || 1;    text += '- 👍 支持: ' + totalSup + ' (' + (totalSup / total * 100).toFixed(0) + '%)\n';    text += '- 👎 反对: ' + totalAgainst + ' (' + (totalAgainst / total * 100).toFixed(0) + '%)\n';    text += '- 🤔 中立: ' + totalNeutral + ' (' + (totalNeutral / total * 100).toFixed(0) + '%)\n\n';    text += '## 各组投票结果\n';    d.groups_summary.forEach(g => {      text += '### ' + g.name + '\n';      g.members.forEach(m => { text += '- ' + m.emoji + ' ' + m.name + ': **' + m.vote + '**\n'; });      text += '> 共识: **' + g.vote + '**\n\n';    });    if (userVoteChoice) {      text += '## 用户投票\n';      text += '- 👤 用户立场: **' + userVoteChoice + '**';      if (userVoteReason) text += '\n- 📝 理由: ' + userVoteReason;      text += '\n\n';    }    text += '## 主策划总结\n\n' + d.summary + '\n';  } else {    text = d.topic + '\n\nAI 投票统计：\n';    let totalSup = 0, totalAgainst = 0, totalNeutral = 0;    d.groups_summary.forEach(g => { g.members.forEach(m => { if (m.vote === '支持') totalSup++; else if (m.vote === '反对') totalAgainst++; else totalNeutral++; }); });    const total = totalSup + totalAgainst + totalNeutral || 1;    text += '支持: ' + totalSup + ' (' + (totalSup / total * 100).toFixed(0) + '%)\n';    text += '反对: ' + totalAgainst + ' (' + (totalAgainst / total * 100).toFixed(0) + '%)\n';    text += '中立: ' + totalNeutral + ' (' + (totalNeutral / total * 100).toFixed(0) + '%)\n\n';    d.groups_summary.forEach(g => {      text += g.name + ' 共识: ' + g.vote + '\n';      g.members.forEach(m => { text += '  ' + m.emoji + ' ' + m.name + ': ' + m.vote + '\n'; });    });    if (userVoteChoice) { text += '\n用户投票: ' + userVoteChoice + (userVoteReason ? ' | ' + userVoteReason : ''); }    text += '\n\n主策划总结：\n' + d.summary;  }  const blob = new Blob([text], { type: format === 'md' ? 'text/markdown' : 'text/plain' });  const url = URL.createObjectURL(blob);  const a = document.createElement('a'); a.href = url; a.download = '辩论报告_' + Date.now() + '.' + (format === 'md' ? 'md' : 'txt'); a.click();  URL.revokeObjectURL(url);}// ==================== UTILS ====================/** * Enhanced content formatter: * 1. HTML-escapes text first (before any processing) * 2. Extracts and renders image URLs as actual images * 3. Parses and styles citation markers [Wikipedia], [FRED], [Bing], etc. * 4. Renders data tables from pipe-separated lines * 5. Handles markdown: bold, italic, code blocks, headers * 6. Splits off "数据来源" section if detected */function formatContent(text) {  if (!text) return '';  // --- Extract sources section first ---  let sourcesHtml = '';  const sourcesMatch = text.match(/(?:【来源|来源|数据来源|Sources?:)\s*([\s\S]{10,800})$/i);  if (sourcesMatch) {    const sourcesText = sourcesMatch[1].trim();    text = text.replace(sourcesMatch[0], '');    sourcesHtml = renderSourcesSection(sourcesText);  }  // --- Step 1: HTML escape ---  text = text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');  // --- Step 2: Extract image URLs and render as <img> ---  const imgPlaceholders = [];  text = text.replace(/(?:https?:\/\/[-a-zA-Z0-9._~:/?#\[\]@!$&'()*+,;%=]+\.(?:jpg|jpeg|png|gif|webp|bmp|svg))(?:[-a-zA-Z0-9._~:/?#\[\]@!$&'()*+,;=%]*)/gi, function(match) {    const idx = imgPlaceholders.length;    imgPlaceholders.push('<div class="agent-img-wrap">' +      '<img src="' + match + '" class="agent-img" loading="lazy" ' +      'onerror="this.style.display=\'none\';this.nextElementSibling.style.display=\'flex\'" />' +      '<div class="agent-img-fallback">🖼️ 图片加载失败: ' + match.substring(0, 60) + '...</div>' +      '</div>');    return '___IMG_' + idx + '___';  });  // Also catch bare URLs to image CDNs / Unsplash / etc.  text = text.replace(/(?:https?:\/\/[-a-zA-Z0-9._~:/?#\[\]@!$&'()*+,;%=]+\/(?:images?|photos?|pics?|img|media)[-a-zA-Z0-9._~:/?#\[\]@!$&'()*+,;=%]*)(?:\s|$|<)/gi, function(match) {    const url = match.trim();    const idx = imgPlaceholders.length;    imgPlaceholders.push('<div class="agent-img-wrap">' +      '<img src="' + url + '" class="agent-img" loading="lazy" ' +      'onerror="this.style.display=\'none\';this.nextElementSibling.style.display=\'flex\'" />' +      '<div class="agent-img-fallback">🖼️ 图片无法显示</div>' +      '</div>');    return '___IMG_' + idx + '___';  });  // --- Step 3: Parse citation markers and collect source info ---  const citedSources = new Set();  const sourceMap = {    'wikipedia': { icon: '📚', label: 'Wikipedia', color: '#e8710a' },    'wiki': { icon: '📚', label: 'Wikipedia', color: '#e8710a' },    '维基百科': { icon: '📚', label: '维基百科', color: '#e8710a' },    'wiki': { icon: '📚', label: 'Wikipedia', color: '#e8710a' },    'fred': { icon: '📈', label: 'FRED经济数据', color: '#059669' },    '宏观经济': { icon: '📈', label: '宏观经济数据', color: '#059669' },    'bing': { icon: '🌐', label: 'Bing搜索', color: '#0078d4' },    '网络搜索': { icon: '🌐', label: '网络搜索', color: '#0078d4' },    '36kr': { icon: '📱', label: '36Kr科技', color: '#f97316' },    '科技新闻': { icon: '📱', label: '科技新闻', color: '#f97316' },    'arxiv': { icon: '📑', label: 'arXiv学术', color: '#7c3aed' },    'semantic scholar': { icon: '🔬', label: '学术论文', color: '#7c3aed' },    'github': { icon: '💻', label: 'GitHub', color: '#24292f' },    '百度新闻': { icon: '📰', label: '百度新闻', color: '#2932e1' },    'news': { icon: '📰', label: '新闻', color: '#dc2626' },    'finance': { icon: '💹', label: '财经数据', color: '#059669' },    'yahoo finance': { icon: '💹', label: 'Yahoo Finance', color: '#7c3aed' },    'stock': { icon: '📊', label: '股票数据', color: '#059669' },  };  // Replace citation markers: [来源1], [Wikipedia], [FRED], 【来源】, etc.  text = text.replace(/\[([^\[\]]{2,30})\](?=\D|$)/g, function(match, name) {    const key = name.trim();    const src = sourceMap[key.toLowerCase()];    if (src) {      citedSources.add(key.toLowerCase());      return '<span class="citation" style="display:inline-flex;align-items:center;gap:2px;background:rgba(' + hexToRgb(src.color) + ',0.12);border:1px solid rgba(' + hexToRgb(src.color) + ',0.35);color:' + src.color + ';font-size:11px;padding:1px 6px;border-radius:10px;margin:0 1px;cursor:help;" title="' + src.label + '">' + src.icon + ' ' + src.label + '</span>';    }    // Generic citation    citedSources.add(key);    return '<span class="citation" style="display:inline-flex;align-items:center;gap:2px;background:rgba(124,111,255,0.12);border:1px solid rgba(124,111,255,0.3);color:var(--accent);font-size:11px;padding:1px 6px;border-radius:10px;margin:0 1px;">📎 ' + name + '</span>';  });  // Also catch 【来源名称】 style markers  text = text.replace(/【([^【】]{2,20})】/g, function(match, name) {    const key = name.trim().toLowerCase();    const src = sourceMap[key];    if (src) {      citedSources.add(key);      return '<span class="citation" style="display:inline-flex;align-items:center;gap:2px;background:rgba(' + hexToRgb(src.color) + ',0.12);border:1px solid rgba(' + hexToRgb(src.color) + ',0.35);color:' + src.color + ';font-size:11px;padding:1px 6px;border-radius:10px;margin:0 1px;cursor:help;" title="' + src.label + '">' + src.icon + ' ' + src.label + '</span>';    }    return '<span class="citation" style="display:inline-flex;align-items:center;gap:2px;background:rgba(124,111,255,0.12);border:1px solid rgba(124,111,255,0.3);color:var(--accent);font-size:11px;padding:1px 6px;border-radius:10px;margin:0 1px;">📎 ' + name + '</span>';  });  // --- Step 4: Render tables from pipe-separated lines ---  const lines = text.split('\n');  const tableLines = [];  let inTable = false;  const tableBuffer = [];  for (let i = 0; i < lines.length; i++) {    const line = lines[i].trim();    // Detect table: lines with multiple | characters    if ((line.match(/\|/g) || []).length >= 2) {      if (!inTable) { inTable = true; tableBuffer.length = 0; }      tableBuffer.push(line);    } else {      if (inTable && tableBuffer.length >= 2) {        tableLines.push(tableBuffer.join('\n'));        tableBuffer.length = 0;      }      inTable = false;    }  }  if (inTable && tableBuffer.length >= 2) tableLines.push(tableBuffer.join('\n'));  // Render detected tables  tableLines.forEach(tableRaw => {    const rows = tableRaw.split('\n').map(l => l.trim()).filter(l => l);    if (rows.length < 2) return;    const colCounts = rows.map(r => (r.match(/\|/g) || []).length);    if (Math.max(...colCounts) < 3) return; // need at least 3 columns    let tableHtml = '<div style="overflow-x:auto;margin:10px 0;"><table style="width:100%;border-collapse:collapse;font-size:13px;">';    rows.forEach((row, ri) => {      const cells = row.split('|').filter((_, i, arr) => i > 0 && i < arr.length - 1);      if (ri === 0) {        // Header row        tableHtml += '<thead><tr style="background:rgba(124,111,255,0.15);">';        cells.forEach(cell => { tableHtml += '<th style="padding:8px 12px;text-align:left;border:1px solid var(--border);color:var(--accent);font-weight:700;">' + cell.trim() + '</th>'; });        tableHtml += '</tr></thead><tbody>';      } else {        const bg = ri % 2 === 0 ? 'var(--bg3)' : 'transparent';        tableHtml += '<tr style="background:' + bg + ';">';        cells.forEach(cell => { tableHtml += '<td style="padding:7px 12px;border:1px solid var(--border);color:var(--text);">' + cell.trim() + '</td>'; });        tableHtml += '</tr>';      }    });    tableHtml += '</tbody></table></div>';    text = text.replace(tableRaw, tableHtml);  });  // --- Step 5: Markdown formatting ---  text = text.replace(/^## (.+)$/gm, '<h2 style="color:var(--yellow);margin:12px 0 6px;font-size:15px;font-weight:700;">$1</h2>');  text = text.replace(/^### (.+)$/gm, '<h3 style="color:var(--cyan);margin:10px 0 4px;font-size:14px;font-weight:700;">$1</h3>');  text = text.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');  text = text.replace(/\*(.+?)\*/g, '<em>$1</em>');  text = text.replace(/```([\s\S]*?)```/g, '<pre style="background:var(--bg);padding:12px;border-radius:8px;overflow-x:auto;margin:8px 0;border:1px solid var(--border);"><code>$1</code></pre>');  text = text.replace(/`([^`]+)`/g, '<code style="background:var(--bg);padding:1px 5px;border-radius:4px;font-size:12.5px;">$1</code>');  // --- Step 6: Numbered lists ---  text = text.replace(/^(\d+)\. (.+)$/gm, '<li style="margin-left:20px;padding:2px 0;"><span style="color:var(--accent);font-weight:700;margin-right:6px;">$1.</span>$2</li>');  // --- Step 7: Bullet lists ---  text = text.replace(/^[-•·] (.+)$/gm, '<li style="margin-left:20px;padding:2px 0;list-style:none;"><span style="color:var(--accent);margin-right:6px;">•</span>$1</li>');  // --- Step 8: Restore image placeholders ---  imgPlaceholders.forEach((html, idx) => {    text = text.replace('___IMG_' + idx + '___', html);  });  // --- Step 9: Paragraphs ---  text = text.replace(/\n{3,}/g, '\n\n');  text = text.replace(/\n\n/g, '</p><p style="margin:6px 0;">');  text = text.replace(/\n/g, '<br>');  // --- Step 10: Wrap in paragraph ---  let result = '<div class="agent-content-body" style="line-height:1.9;font-size:14px;">';  result += '<p style="margin:6px 0;">' + text + '</p>';  // Add sources section if there were citations or extracted sources  if (citedSources.size > 0 || sourcesHtml) {    const citedList = Array.from(citedSources).map(k => {      const src = sourceMap[k];      if (src) return '<span style="display:inline-flex;align-items:center;gap:3px;background:rgba(' + hexToRgb(src.color) + ',0.1);border:1px solid rgba(' + hexToRgb(src.color) + ',0.25);color:' + src.color + ';font-size:11px;padding:2px 8px;border-radius:10px;margin:2px;">' + src.icon + ' ' + src.label + '</span>';      return '<span style="display:inline-flex;align-items:center;gap:3px;background:rgba(124,111,255,0.1);border:1px solid rgba(124,111,255,0.25);color:var(--accent);font-size:11px;padding:2px 8px;border-radius:10px;margin:2px;">📎 ' + k + '</span>';    }).join('');    result += '<div class="agent-sources" style="margin-top:12px;padding-top:10px;border-top:1px solid var(--border);">' +      '<div style="font-size:11px;color:var(--text2);font-weight:600;margin-bottom:6px;display:flex;align-items:center;gap:4px;">📖 引用数据来源 ' +      '<span style="font-weight:400;font-size:10px;">（以下信息来源已被 AI 引用）</span></div>' +      citedList + (sourcesHtml ? '<div style="margin-top:6px;font-size:12px;color:var(--text2);">' + sourcesHtml + '</div>' : '') +      '</div>';  }  result += '</div>';  return result;}function renderSourcesSection(text) {  if (!text) return '';  // Clean and format source text  const lines = text.split('\n').filter(l => l.trim());  if (lines.length === 0) return '';  return lines.map(l => {    const clean = l.replace(/^[-•·*\d.。]+\s*/, '').trim();    return '<div style="font-size:11px;color:var(--text2);padding:2px 0;">• ' + clean + '</div>';  }).join('');}// Smart scroll: only auto-scrolls when user is at/near the bottom.// When scrolled up, shows a "↓ 最新内容" badge to jump back.let _scrolledUp = false;let _lastScrollTop = 0;let _jumpBtn = null;function scrollToBottom(force) {  const area = document.getElementById('debateArea');  if (!area) return;  if (force) {    area.scrollTop = area.scrollHeight;    _scrolledUp = false;    if (_jumpBtn) { _jumpBtn.style.display = 'none'; }    return;  }  if (_scrolledUp) return; // user scrolled up — don't interrupt  area.scrollTop = area.scrollHeight;}function _onDebateAreaScroll() {  const area = document.getElementById('debateArea');  if (!area) return;  // atBottom = user is within 80px of the bottom edge  const distFromBottom = area.scrollHeight - area.scrollTop - area.clientHeight;  if (distFromBottom < 80) {    // Near bottom — resume auto-follow    _scrolledUp = false;    if (_jumpBtn) _jumpBtn.style.display = 'none';  } else {    // Scrolled up — stop auto-follow, show jump button    _scrolledUp = true;    _ensureJumpBtn(area);  }}function _ensureJumpBtn(area) {  if (!_jumpBtn) {    _jumpBtn = document.createElement('button');    _jumpBtn.id = 'jumpToLatest';    _jumpBtn.innerHTML = '↓ 最新内容';    _jumpBtn.style.cssText = [      'position:fixed',      'bottom:24px',      'left:50%',      'transform:translateX(-50%)',      'background:linear-gradient(135deg,var(--accent),#6b5cf0)',      'color:white',      'border:none',      'border-radius:24px',      'padding:8px 20px',      'font-size:13px',      'font-weight:700',      'cursor:pointer',      'box-shadow:0 4px 16px rgba(124,111,255,0.4)',      'z-index:9999',      'transition:opacity 0.2s',      'display:none',    ].join(';');    _jumpBtn.onclick = function() { scrollToBottom(true); };    document.body.appendChild(_jumpBtn);  }  // Position it above the right panel  const panel = document.getElementById('inputPanel');  if (panel) {    const rect = panel.getBoundingClientRect();    _jumpBtn.style.left = 'auto';    _jumpBtn.style.right = (window.innerWidth - rect.left + 4) + 'px';  }  _jumpBtn.style.display = 'block';}function hexToRgb(hex) {  hex = hex.replace('#', '');  const r = parseInt(hex.substring(0, 2), 16) || 128;  const g = parseInt(hex.substring(2, 4), 16) || 128;  const b = parseInt(hex.substring(4, 6), 16) || 128;  return r + ',' + g + ',' + b;}function addPhaseBanner(text) {  const content = document.getElementById('debateContent');  const existing = content.querySelector('.phase-banner');  if (existing) existing.remove();  const banner = document.createElement('div'); banner.className = 'phase-banner'; banner.textContent = text;  content.insertBefore(banner, content.firstChild);}function addStatus(text, type) {  const area = document.getElementById('statusArea');  const item = document.createElement('div');  item.className = 'status-item' + (type === 'active' ? ' active' : type === 'done' ? ' done' : '');  const dot = type === 'active' ? '<div class="spinner"></div>' : '<div class="status-dot"></div>';  item.innerHTML = dot + text;  area.appendChild(item);  area.scrollTop = area.scrollHeight;}function showError(msg) {  // Show error prominently in statusArea (always visible in input-panel)  const sa = document.getElementById('statusArea');  if (sa) { sa.innerHTML = '<div class="status-item status-error" style="color:var(--red);background:rgba(248,113,113,0.1);border:1px solid var(--red);border-radius:8px;padding:10px 14px;margin:4px 0;"><span style="margin-right:6px;">❌</span>' + msg + '<br><span style="font-size:12px;color:var(--text2);margin-top:4px;display:block;">点击"开始辩论"按钮重试</span></div>'; sa.scrollTop = sa.scrollTop + 100; }  const area = document.getElementById('debateArea');  if (area) {    const err = document.createElement('div');    err.style = 'background:rgba(248,113,113,0.1);border:1px solid var(--red);border-radius:12px;padding:16px;color:var(--red);margin:8px;';    err.textContent = '错误: ' + msg; area.appendChild(err);  }}function resetUI() {  // Only re-enable form if no debate is currently running  // Only re-enable form if no debate is currently running  if (isRunning) return;  const btns = ['analyzeBtn', 'startDebateBtn'];  btns.forEach(id => { const b = document.getElementById(id); if (b) { b.disabled = false; if (id === 'startDebateBtn') b.innerHTML = '🚀 开始辩论'; } });  const ti = document.getElementById('topicInput'); if (ti) ti.disabled = false;  // Only reset statusArea if it doesn't contain an error (don't overwrite errors)  const sa = document.getElementById('statusArea');  if (sa && !sa.querySelector('.status-error')) {    sa.innerHTML = '<div class="status-item"><div class="status-dot"></div> 等待发起辩论...</div>';  }  // Clear stale state  voteOptions = [];  currentTopic = '';  currentFields = [];  // Close SSE connection  if (evtSource) { evtSource.close(); evtSource = null; }  _activeStreamId++; // invalidate any in-flight old events  isRunning = false;  // Reset all state  currentSession = null;  activeGroups = {};  currentRound = 0;  debateCompletedData = null;  userVoteSubmitted = false;  userVoteChoice = null;  userVoteReason = '';  // Remove all spinner indicators  document.querySelectorAll('.spinner').forEach(s => s.remove());  // Hide vote tracker  const vt = document.getElementById('voteTrackerTop');  if (vt) { vt.style.display = 'none'; vt.innerHTML = ''; }  // Clear debateArea (stats, final-card, comparison from previous debate)  const da = document.getElementById('debateArea');  if (da) da.innerHTML = '';  // Hide user vote panel  const uvp = document.getElementById('userVotePanel');  if (uvp) uvp.style.display = 'none';  addStatus('已停止', '');}// ==================== SETTINGS ====================let settingsProviders = {}, settingsCurrentProvider = 'minimax', settingsCurrentConfig = {};async function openSettings() {  const overlay = document.getElementById('settingsOverlay');  const fieldsContainer = document.getElementById('settingsFields');  const providerGrid = document.getElementById('providerGrid');  const testResult = document.getElementById('settingsTestResult');  // Immediately show modal with loading state  overlay.classList.add('open');  fieldsContainer.innerHTML = '<div style="text-align:center;padding:40px 20px;color:var(--text2);font-size:14px;"><span class="spinner" style="margin:0 auto 12px;display:block;"></span>加载中...</div>';  providerGrid.innerHTML = '';  if (testResult) { testResult.style.display = 'none'; }  try {    const resp = await fetch('/api/config');    if (!resp.ok) throw new Error('HTTP ' + resp.status);    const data = await resp.json();    settingsProviders = data.providers || {};    settingsCurrentConfig = data;    settingsCurrentProvider = data.provider || 'minimax';    renderProviderGrid();    renderProviderFields(settingsCurrentProvider, data);    updateApiBadge(data);  } catch (e) {    fieldsContainer.innerHTML = '<div style="text-align:center;padding:30px 20px;color:var(--red);font-size:13px;">❌ 加载失败: ' + e.message + '<br><br><button onclick="openSettings()" style="background:var(--bg3);border:1px solid var(--border);color:var(--text);padding:6px 16px;border-radius:8px;cursor:pointer;">重试</button></div>';    console.error('Settings load error:', e);  }}function closeSettings() { document.getElementById('settingsOverlay').classList.remove('open'); }function updateApiBadge(data) {  const badge = document.getElementById('apiStatusBadge');  if (!badge) return;  if (data.configured) {    badge.textContent = '✅ ' + (settingsProviders[data.provider]?.name || data.provider);    badge.classList.add('ok'); badge.removeAttribute('onclick');  } else {    badge.textContent = '⚠️ 未配置'; badge.classList.remove('ok'); badge.setAttribute('onclick', 'openSettings()');  }}function renderProviderGrid() {  const icons = { minimax:'🔬', deepseek:'🔵', openai:'⚡', anthropic:'🧠', google:'🌐', mistral:'🌬️', cohere:'🌀', together:'🤝', huggingface:'🤗', novita:'🚀', azure:'☁️', groq:'⚡', openrouter:'🌍' };  const grid = document.getElementById('providerGrid'); grid.innerHTML = '';  Object.entries(settingsProviders).forEach(([id, p], i) => {    const btn = document.createElement('div');    btn.className = 'provider-btn' + (id === settingsCurrentProvider ? ' selected' : '');    btn.innerHTML = '<span class="picon">' + (icons[id] || '📡') + '</span><span>' + p.name + '</span>';    btn.onclick = () => { settingsCurrentProvider = id; renderProviderFields(id, {}); document.querySelectorAll('.provider-btn').forEach((b, j) => { b.classList.toggle('selected', j === i); }); };    grid.appendChild(btn);  });}function renderProviderFields(providerId, data) {  const meta = settingsProviders[providerId]; const container = document.getElementById('settingsFields');  if (!meta) return;  const currentKey = data.api_key || ''; const currentUrl = data.base_url || meta.url_default || ''; const currentModel = data.model || meta.models?.[0]?.id || '';  const modelsHtml = (meta.models || []).map(m => '<option value="' + m.id + '"' + (m.id === currentModel ? ' selected' : '') + '>' + m.name + '</option>').join('');  container.innerHTML =    '<div class="settings-field"><label>🔑 API Key</label><input type="password" id="cfgApiKey" placeholder="输入你的 API Key" value="' + currentKey + '" autocomplete="off" /></div>' +    '<div class="settings-field"><label>🌐 API 地址</label><input type="text" id="cfgBaseUrl" placeholder="' + (meta.url_placeholder || meta.url_default) + '" value="' + currentUrl + '" /></div>' +    '<div class="settings-field"><label>🤖 模型</label><select id="cfgModel">' + modelsHtml + '</select><div class="settings-hint">选择该提供商下的模型</div></div>';}async function testApiConfig() {  const result = document.getElementById('settingsTestResult'); const testBtn = document.getElementById('testBtn');  result.className = 'testing'; result.textContent = '🔄 测试中...'; result.style.display = 'block';  const apiKey = document.getElementById('cfgApiKey').value.trim(); const baseUrl = document.getElementById('cfgBaseUrl').value.trim(); const model = document.getElementById('cfgModel').value;  if (!apiKey) { result.className = 'fail'; result.textContent = '❌ 请先输入 API Key'; return; }  try {    const resp = await fetch('/api/config/test', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({ provider: settingsCurrentProvider, api_key: apiKey, base_url: baseUrl, model })});    const data = await resp.json();    if (data.success) { result.className = 'ok'; result.textContent = '✅ 连接成功！响应: ' + data.message; }    else { result.className = 'fail'; result.textContent = '❌ 连接失败: ' + data.message; }  } catch (e) { result.className = 'fail'; result.textContent = '❌ 网络错误: ' + e.message; }}async function saveApiConfig() {  const saveBtn = document.getElementById('saveBtn'); const result = document.getElementById('settingsTestResult');  saveBtn.disabled = true; saveBtn.textContent = '保存中...';  const apiKey = document.getElementById('cfgApiKey').value.trim(); const baseUrl = document.getElementById('cfgBaseUrl').value.trim(); const model = document.getElementById('cfgModel').value;  const finalKey = apiKey || settingsCurrentConfig.api_key || '';  try {    const resp = await fetch('/api/config', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({ provider: settingsCurrentProvider, api_key: finalKey, base_url: baseUrl, model })});    const data = await resp.json();    if (data.success) {      settingsCurrentConfig = { ...settingsCurrentConfig, provider: settingsCurrentProvider, model, configured: true };      updateApiBadge(settingsCurrentConfig);      result.className = 'ok'; result.textContent = '✅ 设置已保存，正在使用 ' + (settingsProviders[settingsCurrentProvider]?.name || settingsCurrentProvider) + ' / ' + model;      setTimeout(closeSettings, 1200);    } else { result.className = 'fail'; result.textContent = '❌ 保存失败'; }  } catch (e) { result.className = 'fail'; result.textContent = '❌ 保存失败: ' + e.message; }  finally { saveBtn.disabled = false; saveBtn.textContent = '💾 保存设置'; }}// Init(async function initSettings() {  try {    const resp = await fetch('/api/config'); const data = await resp.json();    settingsProviders = data.providers || {}; settingsCurrentConfig = data; settingsCurrentProvider = data.provider || 'minimax';    updateApiBadge(data);  } catch (e) { console.error('Failed to load config on init:', e); }})();// Attach smart scroll listener to debate area(function() {  const area = document.getElementById('debateArea');  if (area) area.addEventListener('scroll', _onDebateAreaScroll, { passive: true });  // Also watch resize for jump button repositioning  window.addEventListener('resize', function() {    if (_scrolledUp) { _ensureJumpBtn(document.getElementById('debateArea')); }  }, { passive: true });})();function showUserVotePanelInPanel() {  showUserVotePanel();}function _onScroll() {  const area = document.getElementById('debateArea');  if (!area) return;  const dist = area.scrollHeight - area.scrollTop - area.clientHeight;  if (dist < 80) { _scrolledUp = false; if (_jumpBtn) _jumpBtn.style.display = 'none'; }  else { _scrolledUp = true; _ensureJumpBtn(area); }}function _ensureJumpBtn(area) {  if (!_jumpBtn) {    _jumpBtn = document.createElement('button'); _jumpBtn.id = 'jumpToLatest';    _jumpBtn.innerHTML = '\u2193 最新内容';    _jumpBtn.style.cssText = 'position:fixed;bottom:24px;left:50%;transform:translateX(-50%);background:linear-gradient(135deg,var(--accent),#6b5cf0);color:white;border:none;border-radius:24px;padding:8px 20px;font-size:13px;font-weight:700;cursor:pointer;box-shadow:0 4px 16px rgba(124,111,255,0.4);z-index:9999;display:none;';    _jumpBtn.onclick = function() { scrollToBottom(true); };    document.body.appendChild(_jumpBtn);  }  const panel = document.getElementById('inputPanel');  if (panel) { const rect = panel.getBoundingClientRect(); _jumpBtn.style.right = (window.innerWidth - rect.left + 4) + 'px'; _jumpBtn.style.left = 'auto'; }  _jumpBtn.style.display = 'block';}// Init scroll listener(function() {  const area = document.getElementById('debateArea');  if (area) area.addEventListener('scroll', _onScroll, { passive: true });  window.addEventListener('resize', function() { if (_scrolledUp) _ensureJumpBtn(document.getElementById('debateArea')); }, { passive: true });})();</script>
+<script>
+// ==================== STATE ====================
+let currentSession = null, evtSource = null, isRunning = false, activeGroups = {};
+let currentRound = 0, currentTopic = '', currentFields = [], voteOptions = [];
+let debateCompletedData = null, userVoteSubmitted = false, userVoteChoice = null, userVoteReason = '';
+let _activeStreamId = 0; //递增token，每开启新辩论+1，用于丢弃旧session的事件
+// ==================== DYNAMIC FORM ====================
+async function analyzeTopic() {
+  const topic = document.getElementById('topicInput').value.trim();
+  if (!topic) { alert('请输入话题'); return; }
+  const btn = document.getElementById('analyzeBtn');
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner-sm"></span> AI 分析中...';
+  try {
+    const resp = await fetch('/api/debate/analyze', { method: 'POST', signal: AbortSignal.timeout(30000), headers: {'Content-Type': 'application/json'}, body: JSON.stringify({topic}) });
+    const data = await resp.json();
+    if (data.error) {
+      const sa = document.getElementById('statusArea');
+      if (sa) { sa.innerHTML = '<div class="status-item status-error" style="color:var(--red);background:rgba(248,113,113,0.1);border:1px solid var(--red);border-radius:8px;padding:10px 14px;margin:4px 0;"><span style="margin-right:6px;">❌</span>分析失败: ' + data.error + '<br><span style="font-size:12px;color:var(--text2);">请检查 API 配置或网络连接</span></div>'; }
+      return;
+    }
+    currentTopic = topic; currentFields = data.fields || []; renderDynamicForm(currentFields);
+    document.getElementById('topicInputArea').style.display = 'none';
+    document.getElementById('dynamicFormArea').style.display = 'block';
+    document.getElementById('analyzedTopicBanner').textContent = '✓ ' + topic;
+    document.querySelector('.input-form').scrollTop = 0;
+  } catch(err) {
+    const sa = document.getElementById('statusArea');
+    if (sa) { sa.innerHTML = '<div class="status-item status-error" style="color:var(--red);background:rgba(248,113,113,0.1);border:1px solid var(--red);border-radius:8px;padding:10px 14px;margin:4px 0;"><span style="margin-right:6px;">❌</span>分析失败: ' + err.message + '<br><span style="font-size:12px;color:var(--text2);">请检查 API 配置或网络连接</span></div>'; }
+  }
+}
+function handleGroupStart(d) {
+  var badge = document.getElementById('badge-' + d.group_id);
+  if (badge) badge.className = 'group-badge active';
+}
+function renderDynamicForm(fields) {
+  const container = document.getElementById('dynamicFieldsContainer');
+  container.innerHTML = '';
+  fields.forEach(field => {
+    const div = document.createElement('div');
+    const label = document.createElement('label');
+    label.innerHTML = field.label + (field.description ? '<span class="field-desc">— ' + field.description + '</span>' : '');
+    let input = '';
+    if (field.type === 'select') {
+      const opts = (field.options || []).map(opt => '<option value="' + opt + '">' + opt + '</option>').join('');
+      input = '<select id="field_' + field.key + '" name="' + field.key + '">' + opts + '</select>';
+    } else if (field.type === 'textarea') {
+      input = '<textarea id="field_' + field.key + '" name="' + field.key + '" rows="2" placeholder="' + (field.placeholder || '') + '"></textarea>';
+    } else {
+      input = '<input type="text" id="field_' + field.key + '" name="' + field.key + '" placeholder="' + (field.placeholder || '') + '" />';
+    }
+    div.appendChild(label);
+    div.insertAdjacentHTML('beforeend', input);
+    container.appendChild(div);
+  });
+}
+function resetForm() {
+  stopDebate(); // full state + SSE cleanup
+  currentTopic = ''; currentFields = [];
+  // Reset debate display area
+  const content = document.getElementById('debateContent');
+  if (content) {
+    content.innerHTML = '<div class="welcome-screen" id="welcomeScreen">' +
+      '<div class="welcome-emoji">🎙️</div>' +
+      '<div class="welcome-title">AI 辩论系统 v2.0</div>' +
+      '<div class="welcome-sub">输入话题，多个 AI 角色展开真实辩论，收集真实数据，并进行投票统计</div>' +
+      '<div class="welcome-features">' +
+      '<div class="welcome-feature"><span>🤖</span> 多智能体</div>' +
+      '<div class="welcome-feature"><span>🔍</span> 实时研究</div>' +
+      '<div class="welcome-feature"><span>🗳️</span> 投票统计</div>' +
+      '<div class="welcome-feature"><span>📥</span> 报告导出</div>' +
+      '</div></div>';
+  }
+  // Reset vote tracker
+  const vt = document.getElementById('voteTrackerTop');
+  if (vt) { vt.style.display = 'none'; vt.innerHTML = ''; }
+  // Also clear debateArea to remove stats/final-card/comparison
+  const da = document.getElementById('debateArea');
+  if (da) da.innerHTML = '';
+  // Reset topic chip
+  const chip = document.getElementById('topicChip');
+  if (chip) { chip.classList.remove('visible'); chip.textContent = ''; }
+  // Reset form UI
+  const tia = document.getElementById('topicInputArea');
+  if (tia) tia.style.display = 'block';
+  const dfa = document.getElementById('dynamicFormArea');
+  if (dfa) dfa.style.display = 'none';
+  const ti = document.getElementById('topicInput');
+  if (ti) { ti.value = ''; ti.disabled = false; }
+  const dfc = document.getElementById('dynamicFieldsContainer');
+  if (dfc) dfc.innerHTML = '';
+  const btn = document.getElementById('analyzeBtn');
+  if (btn) btn.disabled = false;
+  const sdb = document.getElementById('startDebateBtn');
+  if (sdb) sdb.disabled = false;
+  const exp = document.getElementById('exportBtn');
+  if (exp) exp.style.display = 'none';
+  const uvp = document.getElementById('userVotePanel');
+  if (uvp) uvp.style.display = 'none';
+  // Reset smart scroll
+  _scrolledUp = false;
+  if (_jumpBtn) { _jumpBtn.style.display = 'none'; }
+  // Reset status area
+  const sa = document.getElementById('statusArea');
+  if (sa) sa.innerHTML = '<div class="status-item"><div class="status-dot"></div> 等待发起辩论...</div>';
+}
+// ==================== DEBATE ====================
+function startDebate() {
+  console.log('[DEBUG] startDebate called, isRunning=' + isRunning);
+  const topic = currentTopic || document.getElementById('topicInput').value.trim();
+  console.log('[DEBUG] topic:', topic);
+  if (!topic) { alert('请先输入话题'); return; }
+  // Guard: prevent starting while a debate is already running
+  if (isRunning) {
+    if (!confirm('辩论正在进行中，确定要中断并开始新辩论吗？')) return;
+  }
+  stopDebate(); // clean up any existing debate first
+  const parts = [topic];
+  currentFields.forEach(field => {
+    const el = document.getElementById('field_' + field.key);
+    if (el) { const val = el.value.trim(); if (val) parts.push('【' + field.label + '】' + val); }
+  });
+  const user_input = parts.join('\n');
+  const chip = document.getElementById('topicChip');
+  chip.textContent = topic; chip.classList.add('visible');
+  const ws = document.getElementById('welcomeScreen');
+  if (ws) ws.style.display = 'none';
+  // Show loading state in debateContent immediately
+  const content = document.getElementById('debateContent');
+  content.innerHTML = '<div style="text-align:center;padding:60px 20px;color:var(--text2);"><div class="spinner" style="margin:0 auto 16px;"></div><div style="font-size:15px;color:var(--text);margin-bottom:8px;">🧠 主策划分析中...</div><div style="font-size:13px;">正在设计辩论结构，请稍候</div></div>';
+  document.getElementById('voteTrackerTop').style.display = 'none';
+  document.getElementById('voteTrackerTop').innerHTML = '';
+  document.getElementById('userVotePanel').style.display = 'none';
+  userVoteSubmitted = false; userVoteChoice = null;
+  debateCompletedData = null;
+  document.getElementById('exportBtn').style.display = 'none';
+  /* keep loading state */  document.getElementById('statusArea').innerHTML = '';
+  currentSession = null; activeGroups = {}; currentRound = 0; isRunning = true;
+  // Immediately show loading feedback
+  const sdb = document.getElementById('startDebateBtn');
+  if (sdb) { sdb.disabled = true; sdb.innerHTML = '<span class="spinner-sm"></span> 正在启动...'; }
+  document.getElementById('topicInput').disabled = true;
+  // Show "正在连接..." in statusArea
+  const sa = document.getElementById('statusArea');
+  if (sa) { sa.innerHTML = '<div class="status-item active"><div class="spinner"></div> 正在连接辩论系统...</div>'; }
+  fetch('/api/debate/start', { method: 'POST', signal: AbortSignal.timeout(30000), headers: {'Content-Type': 'application/json'}, body: JSON.stringify({topic, user_input}) })
+  .then(r => r.json())
+  .then(data => {
+    if (data.error) {
+      console.log('[DEBUG] showError called with:', data.error);
+    showError(data.error);
+      isRunning = false;
+      document.getElementById('analyzeBtn').disabled = false;
+      if (sdb) { sdb.disabled = false; sdb.innerHTML = '🚀 开始辩论'; }
+      document.getElementById('topicInput').disabled = false;
+      return;
+    }
+    currentSession = data.session_id;
+    console.log('[DEBUG] calling connectStream with session:', currentSession);
+    connectStream(currentSession);
+  })
+  .catch(err => { showError('启动失败: ' + err.message + '（请检查 API 配置）'); isRunning = false; resetUI(); });
+}
+function connectStream(sessionId) {
+  // Close any existing EventSource before creating a new one
+  if (evtSource) {
+    evtSource.close();
+    evtSource = null;
+  }
+  _activeStreamId++; // increment — this session's token
+  const myStreamId = _activeStreamId;
+  evtSource = new EventSource('/api/debate/' + sessionId + '/stream');
+  evtSource.onmessage = function(e) {
+    // [DEBUG] SSE received
+    console.log('[DEBUG] SSE event:', e.data ? e.data.substring(0,100) : 'empty');
+    // Discard events from a previous/old stream session
+    if (myStreamId !== _activeStreamId) return;
+    clearTimeout(connectionTimeout);
+    try { handleEvent(JSON.parse(e.data), myStreamId); } catch(err) { console.error('Parse error:', err, e.data); }
+  };
+  evtSource.onerror = function() {
+    console.log('[DEBUG] EventSource onerror');
+    if (myStreamId !== _activeStreamId) return;
+    clearTimeout(connectionTimeout);
+    if (isRunning) {
+      isRunning = false;
+      const sa = document.getElementById('statusArea');
+      if (sa) { sa.innerHTML = '<div class="status-item status-error" style="color:var(--red);background:rgba(248,113,113,0.1);border:1px solid var(--red);border-radius:8px;padding:10px 14px;margin:4px 0;"><span style="margin-right:6px;">❌</span>连接中断（网络问题或服务器错误）<br><span style="font-size:12px;color:var(--text2);">点击"开始辩论"按钮重试</span></div>'; }
+    }
+    evtSource.close(); evtSource = null;
+  };
+  
+  evtSource.addEventListener('stream_end', function() {
+    if (myStreamId !== _activeStreamId) return;
+    clearTimeout(connectionTimeout);
+    isRunning = false; evtSource.close(); evtSource = null;
+    addStatus('✅ 辩论完成', 'done'); resetUI();
+  });
+  // Connection timeout - if no events received within 15s, show error
+  var connectionTimeout = setTimeout(function() {
+    if (myStreamId !== _activeStreamId) return;
+    evtSource.close(); evtSource = null; isRunning = false;
+    var sa = document.getElementById('statusArea');
+    if (sa) { sa.innerHTML = '<div class="status-item status-error" style="color:var(--red);background:rgba(248,113,113,0.1);border:1px solid var(--red);border-radius:8px;padding:10px 14px;margin:4px 0;"><span style="margin-right:6px;">❌</span>连接超时（服务器未响应）<br><span style="font-size:12px;color:var(--text2);">请检查 API 配置是否正确，或稍后重试</span></div>'; }
+    resetUI();
+  }, 15000);
+  // Cancel timeout when first event arrives
+  var _origOnmsg = evtSource.onmessage;
+  evtSource.onmessage = function(e) {
+    clearTimeout(connectionTimeout);
+    _origOnmsg.call(evtSource, e);
+  };
+}
+function handleGroupsCreated(d) {
+  if (d.vote_options && d.vote_options.length > 0) { voteOptions = d.vote_options; }
+  d.groups.forEach(g => { activeGroups[g.id] = { ...g, _votes: { sup: 0, against: 0, neutral: 0 } }; });
+  const content = document.getElementById('debateContent'); content.innerHTML = '';
+  const bar = document.createElement('div'); bar.className = 'groups-bar';
+  d.groups.forEach(g => { const badge = document.createElement('div'); badge.className = 'group-badge'; badge.id = 'badge-' + g.id; badge.textContent = g.name; bar.appendChild(badge); });
+  content.appendChild(bar);
+  d.groups.forEach(g => {
+    const card = document.createElement('div'); card.className = 'group-card'; card.id = 'group-' + g.id;
+    card.innerHTML = '<div class="group-header"><span>' + g.name + '</span><span class="group-desc">' + g.description + '</span></div>' +
+      '<div class="agents-container" id="agents-' + g.id + '"></div>' +
+      '<div class="voting-section" id="voting-' + g.id + '" style="display:none;padding:12px;"></div>' +
+      '<div class="group-result" id="result-' + g.id + '" style="display:none;"></div>';
+    content.appendChild(card);
+  });
+  buildVoteTracker(d.groups);
+}
+function handleRoundSummary(d) {
+  const content = document.getElementById('debateContent');
+  const card = document.createElement('div'); card.className = 'round-summary-card';
+  card.innerHTML =
+    '<div class="round-summary-header">' +
+    '  <span>\u{1F4CB} 第 ' + d.round + ' 轮要点</span>' +
+    '  <span class="round-summary-label">' + (d.label||'') + '</span></div>' +
+    '<div class="round-summary-body">' + formatContent(d.summary) + '</div>';
+  content.appendChild(card);
+  scrollToBottom(true);
+  addStatus('第 ' + d.round + ' 轮结束', 'done');
+}
+function updateTrackerGroup(groupId, votes) {
+  if (!votes) return;
+  const total = votes.sup + votes.against + votes.neutral || 1;
+  const sp = (votes.sup / total * 100).toFixed(0), ap = (votes.against / total * 100).toFixed(0), np = (votes.neutral / total * 100).toFixed(0);
+  const bar = document.getElementById('bar-' + groupId);
+  if (bar) {
+    const s = bar.querySelector('.vote-bar-sup'), a = bar.querySelector('.vote-bar-against'), n = bar.querySelector('.vote-bar-neutral');
+    if (s) s.style.width = sp + '%'; if (a) a.style.width = ap + '%'; if (n) n.style.width = np + '%';
+  }
+}
+function handleResearching(d) {
+  const content = document.getElementById('debateContent');
+  const banner = content.querySelector('.phase-banner'); if (banner) banner.remove();
+  const card = document.createElement('div'); card.className = 'research-card';
+  card.id = 'research-card';
+  card.innerHTML = '<div class="research-header"><span style="font-size:20px;">🔍</span><span>正在全网收集真实资料...</span><span class="spinner-sm" style="margin-left:auto;"></span></div>' +
+    '<div style="font-size:12px;color:var(--text2);margin-bottom:4px;">实时抓取：网络搜索 · 财经数据 · 学术论文 · 新闻资讯</div>' +
+    '<div class="sources-grid" id="sources-grid"></div>';
+  content.appendChild(card); addStatus('收集资料中', 'active');
+}
+function handleResearchComplete(d) {
+  const grid = document.getElementById('sources-grid');
+  if (grid && d.sources) { grid.innerHTML = ''; d.sources.forEach(src => { const b = document.createElement('div'); b.className = 'source-badge done'; b.innerHTML = '<span class="check">✓</span><span>' + src + '</span>'; grid.appendChild(b); }); }
+  addStatus('资料收集完成', 'done');
+}
+function handleAgentStart(d) {
+  const container = document.getElementById('agents-' + d.group_id); if (!container) return;
+  const card = document.getElementById('group-' + d.group_id); if (card) card.classList.add('active');
+  const entry = document.createElement('div'); entry.className = 'agent-entry';
+  entry.id = 'agent-entry-' + d.group_id + '-' + d.agent_key;
+  entry.innerHTML = '<div class="agent-meta">' +
+    '<div class="agent-avatar" style="border-color:' + (d.color || '#6366f1') + ';background:rgba(' + hexToRgb(d.color || '#6366f1') + ',0.1);">' + d.emoji + '</div>' +
+    '<span class="agent-name" style="color:' + (d.color || '#6366f1') + ';">' + d.agent_name + '</span>' +
+    '<span class="agent-role">第' + d.round + '轮</span>' +
+    '<span class="spinner" style="margin-left:auto;"></span></div>' +
+    '<div class="agent-content" id="agent-content-' + d.group_id + '-' + d.agent_key + '"><span style="color:var(--text2);font-size:13px;">思考中...</span></div>';
+  container.appendChild(entry);
+  const badge = document.getElementById('badge-' + d.group_id); if (badge) badge.className = 'group-badge active';
+  scrollToBottom();
+}
+function handleAgentMessage(d) {
+  const contentEl = document.getElementById('agent-content-' + d.group_id + '-' + d.agent_key);
+  const entry = document.getElementById('agent-entry-' + d.group_id + '-' + d.agent_key);
+  if (entry) { const sp = entry.querySelector('.spinner'); if (sp) sp.remove(); }
+  if (contentEl) {
+    contentEl.innerHTML = (d.content && d.content.startsWith('[Error:'))
+      ? '<span style="color:var(--red);font-size:13px;">' + d.content + '</span>'
+      : formatContent(d.content);
+    // Don't auto-scroll here — let user read while messages stream in
+  }
+}
+function handleGroupRoundDone(d) {
+  const badge = document.getElementById('badge-' + d.group_id);
+  if (badge) badge.className = 'group-badge';
+  updateTrackerGroup(d.group_id, d.votes);
+}
+function handleAgentDone(d) {
+  const entry = document.getElementById('agent-entry-' + d.group_id + '-' + d.agent_key);
+  if (entry) { const sp = entry.querySelector('.spinner'); if (sp) sp.remove(); }
+  const card = document.getElementById('group-' + d.group_id); if (card) card.classList.remove('active');
+}
+// ==================== VOTE TRACKER ====================
+function buildVoteTracker(groups) {
+  const tracker = document.getElementById('voteTrackerTop');
+  tracker.style.display = 'block';
+  tracker.innerHTML = '<div class="vote-tracker-header"><div class="vote-tracker-title">📊 实时投票监控</div><button class="vote-tracker-toggle" id="trackerToggle" onclick="toggleVoteTracker()">收起 ▲</button></div><div class="vote-tracker-body" id="trackerBody"></div>';
+  const body = document.getElementById('trackerBody');
+  groups.forEach(g => {
+    const row = document.createElement('div'); row.className = 'vote-group-row';
+    row.id = 'tracker-row-' + g.id;
+    row.innerHTML = '<span class="vote-group-name">' + g.name + '</span>' +
+      '<div class="vote-bar-container" id="bar-' + g.id + '"><div class="vote-bar-sup" style="width:0%"></div><div class="vote-bar-against" style="width:0%"></div><div class="vote-bar-neutral" style="width:0%"></div></div>' +
+      '<span class="vote-group-status" id="tracker-status-' + g.id + '" style="color:var(--text2);">投票中</span>';
+    body.appendChild(row);
+  });
+}
+function updateVoteTracker(groupId, votes) {
+  const total = votes.sup + votes.against + votes.neutral; if (total === 0) return;
+  const supPct = (votes.sup / total * 100).toFixed(0);
+  const againstPct = (votes.against / total * 100).toFixed(0);
+  const neutralPct = (votes.neutral / total * 100).toFixed(0);
+  const bar = document.getElementById('bar-' + groupId);
+  if (bar) {
+    const s = bar.querySelector('.vote-bar-sup'), a = bar.querySelector('.vote-bar-against'), n = bar.querySelector('.vote-bar-neutral');
+    if (s) s.style.width = supPct + '%'; if (a) a.style.width = againstPct + '%'; if (n) n.style.width = neutralPct + '%';
+  }
+}
+function toggleVoteTracker() {
+  const body = document.getElementById('trackerBody'), btn = document.getElementById('trackerToggle');
+  if (body.style.display === 'none') { body.style.display = 'flex'; btn.textContent = '收起 ▲'; }
+  else { body.style.display = 'none'; btn.textContent = '展开 ▼'; }
+}
+// ==================== GROUP VOTING ====================
+function handleGroupVoting(d) {
+  const votingEl = document.getElementById('voting-' + d.group_id);
+  if (votingEl) { votingEl.style.display = 'block'; votingEl.innerHTML = '<div style="font-size:12px;color:var(--text2);margin-bottom:8px;display:flex;align-items:center;gap:6px;"><span class="spinner-sm"></span> 投票中...</div>'; }
+  addStatus(d.group_name + ' 投票中', 'active');
+  const statusEl = document.getElementById('tracker-status-' + d.group_id);
+  if (statusEl) { statusEl.textContent = '投票中...'; statusEl.style.color = 'var(--yellow)'; }
+}
+function handleVoteCast(d) {
+  const votingEl = document.getElementById('voting-' + d.group_id);
+  if (votingEl) {
+    const sp = votingEl.querySelector('.spinner-sm'); if (sp) sp.parentElement.style.display = 'none';
+    const firstDiv = votingEl.querySelector('div'); if (firstDiv && firstDiv.textContent.includes('投票中')) firstDiv.remove();
+    const vc = document.createElement('div'); vc.className = 'vote-card';
+    const icon = d.vote === '支持' ? '👍' : d.vote === '反对' ? '👎' : '🤔';
+    const cls = d.vote === '支持' ? 'sup' : d.vote === '反对' ? 'against' : 'neutral';
+    vc.innerHTML = '<span class="vote-emoji">' + icon + '</span><span class="vote-name">' + d.agent_name + '</span><span class="vote-tag ' + cls + '">' + d.vote + '</span>';
+    votingEl.appendChild(vc);
+    if (d.reason) { const r = document.createElement('div'); r.className = 'vote-reason'; r.textContent = d.reason.substring(0, 100); votingEl.appendChild(r); }
+  }
+  if (activeGroups[d.group_id]) {
+    const v = activeGroups[d.group_id]._votes;
+    if (d.vote === '支持') v.sup++; else if (d.vote === '反对') v.against++; else v.neutral++;
+    updateVoteTracker(d.group_id, v);
+  }
+}
+function handleGroupVoteResult(d) {
+  const resultEl = document.getElementById('result-' + d.group_id);
+  if (resultEl) { resultEl.style.display = 'block'; const icon = d.group_vote === '支持' ? '✅' : d.group_vote === '反对' ? '❌' : '⚖️'; resultEl.innerHTML = icon + ' ' + d.group_name + ' 共识: <strong>' + d.group_vote + '</strong>'; }
+  const badge = document.getElementById('badge-' + d.group_id); if (badge) badge.className = 'group-badge done';
+  const statusEl = document.getElementById('tracker-status-' + d.group_id);
+  if (statusEl) { const icon = d.group_vote === '支持' ? '✅' : d.group_vote === '反对' ? '❌' : '⚖️'; statusEl.textContent = icon + ' ' + d.group_vote; statusEl.style.color = d.group_vote === '支持' ? 'var(--green)' : d.group_vote === '反对' ? 'var(--red)' : 'var(--yellow)'; }
+  if (d.votes) { updateTrackerGroup(d.group_id, d.votes); }
+  // Update vote tracker bar with final votes from server
+  if (d.votes) { updateTrackerGroup(d.group_id, d.votes); }
+  // Update vote tracker bar with final votes from server
+  if (d.votes) { updateTrackerGroup(d.group_id, d.votes); }
+  if (d.votes) { updateTrackerGroup(d.group_id, d.votes); }
+}
+// ==================== FINAL ====================
+function buildTracker(groups) {
+  const tracker = document.getElementById('voteTrackerTop');
+  tracker.style.display = 'block';
+  tracker.innerHTML =
+    '<div class="vote-tracker-header">' +
+    '  <div class="vote-tracker-title">\u{1F4CA} 实时投票监控</div>' +
+    '  <button class="vote-tracker-toggle" id="trackerToggle" onclick="toggleTracker()">收起 \u{25B2}</button></div>' +
+    '<div class="vote-tracker-body" id="trackerBody"></div>';
+  const body = document.getElementById('trackerBody');
+  groups.forEach(g => {
+    const row = document.createElement('div'); row.className = 'vote-group-row'; row.id = 'tracker-row-' + g.id;
+    row.innerHTML =
+      '<span class="vote-group-name">' + g.name + '</span>' +
+      '<div class="vote-bar-container" id="bar-' + g.id + '">' +
+      '  <div class="vote-bar-sup" style="width:0%"></div><div class="vote-bar-against" style="width:0%"></div><div class="vote-bar-neutral" style="width:0%"></div></div>' +
+      '<span class="vote-group-status" id="tracker-status-' + g.id + '" style="color:var(--text2);">投票中</span>';
+    body.appendChild(row);
+  });
+}
+function handleFinalAnswer(d) {
+  debateCompletedData = d;
+  let totalSup = 0, totalAgainst = 0, totalNeutral = 0;
+  var voteOpts = voteOptions.length > 0 ? voteOptions : ['支持', '反对', '中立'];
+  var supKws = ['支持', '认同', '非常认同', '赞成'];
+  var conKws = ['反对', '强烈反对', '拒绝'];
+  d.groups_summary.forEach(function(g) { g.members.forEach(function(m) { var v = m.vote || ''; var isSup = supKws.some(function(k) { return v.indexOf(k) >= 0; }); var isCon = conKws.some(function(k) { return v.indexOf(k) >= 0; }); if (isSup) totalSup++; else if (isCon) totalAgainst++; else totalNeutral++; }); });
+  const total = totalSup + totalAgainst + totalNeutral || 1;
+  const supPct = (totalSup / total * 100).toFixed(0), againstPct = (totalAgainst / total * 100).toFixed(0), neutralPct = (totalNeutral / total * 100).toFixed(0);
+  const area = document.getElementById('debateContent');
+  const statsCard = document.createElement('div'); statsCard.className = 'stats-summary';
+  statsCard.innerHTML = '<div class="stats-title">📊 AI 投票统计 <span style="font-size:12px;color:var(--text2);font-weight:400;">(' + total + ' 位角色)</span></div>' +
+    '<div class="stats-grid"><div class="stat-item"><div class="stat-number green">' + totalSup + '</div><div class="stat-label">👍 支持</div></div>' +
+    '<div class="stat-item"><div class="stat-number red">' + totalAgainst + '</div><div class="stat-label">👎 反对</div></div>' +
+    '<div class="stat-item"><div class="stat-number yellow">' + totalNeutral + '</div><div class="stat-label">🤔 中立</div></div></div>' +
+    '<div class="stats-bar-container"><div class="stats-bar-sup" style="width:' + supPct + '%"></div><div class="stats-bar-against" style="width:' + againstPct + '%"></div><div class="stats-bar-neutral" style="width:' + neutralPct + '%"></div></div>' +
+    '<div class="stats-bar-labels"><span>👍 ' + totalSup + ' (' + supPct + '%)</span><span>👎 ' + totalAgainst + ' (' + againstPct + '%)</span><span>🤔 ' + totalNeutral + ' (' + neutralPct + '%)</span></div>';
+  area.appendChild(statsCard);
+  d.groups_summary.forEach(g => {
+    const card = document.createElement('div'); card.className = 'group-result'; card.style.cssText = 'display:block;margin:8px 0 0;';
+    const icon = g.vote === '支持' ? '✅' : g.vote === '反对' ? '❌' : '⚖️';
+    const membersHtml = g.members.map(m => { const c = m.vote === '支持' ? 'sup' : m.vote === '反对' ? 'against' : 'neutral'; return '<span class="vote-tag ' + c + '" style="margin-right:4px;">' + m.emoji + ' ' + m.name + '=' + m.vote + '</span>'; }).join('');
+    card.innerHTML = icon + ' <strong>' + g.name + '</strong>：' + membersHtml + ' → 共识: <strong>' + g.vote + '</strong>';
+    area.appendChild(card);
+  });
+  const finalCard = document.createElement('div'); finalCard.className = 'final-card';
+  finalCard.innerHTML = '<div class="final-title">🎯 主策划最终总结</div>' +
+    '<div class="final-content">' + formatContent(d.summary) + '</div>' +
+    '<div class="export-area">' +
+    '<button class="btn-export" onclick="exportDebate(\'md\')">📄 导出 Markdown</button>' +
+    '<button class="btn-export" onclick="exportDebate(\'txt\')">📝 导出 TXT</button></div>';
+  area.appendChild(finalCard);
+  scrollToBottom();
+}
+// ==================== USER VOTE ====================
+function showUserVotePanel() {
+  // Build dynamic vote buttons based on current voteOptions
+  // Default to ["支持", "反对", "中立"] if none set
+  const opts = voteOptions.length > 0 ? voteOptions : ["支持", "反对", "中立"];
+  const panel = document.getElementById('userVotePanel');
+  panel.style.display = 'block';
+  // Update header
+  const header = panel.querySelector('.user-vote-header');
+  if (header) {
+    if (voteOptions.length > 0) {
+      header.textContent = '🗳️ 你支持哪个选项？';
+    } else {
+      header.textContent = '🗳️ 你的立场是什么？';
+    }
+  }
+  // Rebuild vote buttons
+  const btnContainer = panel.querySelector('.user-vote-buttons');
+  if (btnContainer) {
+    btnContainer.innerHTML = '';
+    opts.forEach(function(opt) {
+      var btn = document.createElement('button');
+      btn.className = 'user-vote-btn';
+      btn.dataset.choice = opt;
+      btn.innerHTML = '<span class="emoji">' + getOptionEmoji(opt) + '</span><span class="label">' + opt + '</span>';
+      btn.onclick = (function(o) { return function() { selectUserVote(o); }; })(opt);
+      btnContainer.appendChild(btn);
+    });
+  }
+  // Reset selection state
+  if (!userVoteSubmitted) {
+    userVoteChoice = null;
+    var btns = btnContainer.querySelectorAll('.user-vote-btn');
+    btns.forEach(function(b) { b.classList.remove('selected', 'sup', 'against', 'neu'); });
+  }
+}
+function getOptionEmoji(opt) {
+  var e = getOptionEmoji;
+  if (!e.map) {
+    e.map = {
+      '支持': '👍', '反对': '👎', '中立': '😐', '中立（不表态）': '😐',
+      '非常认同': '🙌', '认同': '👍', '反对': '👎', '强烈反对': '👎',
+      'pro': '👍', 'con': '👎', 'neutral': '😐'
+    };
+    // Money options
+    var moneyOpts = ['100万以下', '100-300万', '300-500万', '500万以上', '100万-200万', '200万-500万'];
+    moneyOpts.forEach(function(m) { e.map[m] = '💰'; });
+  }
+  return e.map[opt] || '📌';
+}
+function selectUserVote(choice) {
+  if (userVoteSubmitted) return;
+  userVoteChoice = choice;
+  document.querySelectorAll('.user-vote-btn').forEach(function(b) { b.classList.remove('selected','sup','against','neutral'); });
+  document.querySelectorAll('.user-vote-btn').forEach(function(b) {
+    if (b.dataset.choice === choice) {
+      b.classList.add('selected');
+      var supKws = ['支持', '认同', '非常认同', '赞成'];
+      var conKws = ['反对', '强烈反对', '拒绝'];
+      if (supKws.some(function(k) { return choice.indexOf(k) >= 0; })) b.classList.add('sup');
+      else if (conKws.some(function(k) { return choice.indexOf(k) >= 0; })) b.classList.add('against');
+      else b.classList.add('neutral');
+    }
+  });
+  document.getElementById('uvReason').style.display = 'block';
+  const sb = document.getElementById('uvSubmit'); if (sb) sb.style.display = 'block';
+}
+function submitUserVote() {
+  if (!userVoteChoice || userVoteSubmitted) return;
+  userVoteSubmitted = true;
+  userVoteReason = (document.getElementById('uvReasonText') && document.getElementById('uvReasonText').value) || '';
+  const sb = document.getElementById('uvSubmit');
+  if (sb) { sb.classList.add('submitted'); sb.textContent = '✅ 已提交'; }
+  const rv = document.getElementById('uvResult');
+  if (rv) { rv.style.display = 'block'; rv.innerHTML = '你的投票：<strong>' + userVoteChoice + '</strong>（' + userVoteReason.substring(0, 60) + ')'; }
+  if (debateCompletedData && userVoteChoice) showUserVsAIComparison();
+}
+function showUserVsAIComparison() {
+  if (!debateCompletedData || !userVoteChoice) return;
+  const area = document.getElementById('debateArea');
+  let totalSup = 0, totalAgainst = 0, totalNeutral = 0, aiMajority = '';
+  debateCompletedData.groups_summary.forEach(g => {
+    g.members.forEach(m => { if (m.vote === '支持') totalSup++; else if (m.vote === '反对') totalAgainst++; else totalNeutral++; });
+  });
+  const total = totalSup + totalAgainst + totalNeutral || 1;
+  if (totalSup >= totalAgainst && totalSup >= totalNeutral) aiMajority = '支持';
+  else if (totalAgainst >= totalSup && totalAgainst >= totalNeutral) aiMajority = '反对';
+  else aiMajority = '中立';
+  const card = document.createElement('div'); card.className = 'comparison-card';
+  const userCls = userVoteChoice === '支持' ? 'sup' : userVoteChoice === '反对' ? 'against' : 'neutral';
+  const aiCls = aiMajority === '支持' ? 'sup' : aiMajority === '反对' ? 'against' : 'neutral';
+  const agree = userVoteChoice === aiMajority;
+  card.innerHTML =
+    '<div class="comparison-title">⚖️ 人机投票对比</div>' +
+    '<div class="comparison-row"><span class="comparison-label">🤖 AI</span><span class="comparison-badge ' + aiCls + '">' + aiMajority + ' (' + ((aiMajority === '支持' ? totalSup : aiMajority === '反对' ? totalAgainst : totalNeutral) / total * 100).toFixed(0) + '%)</span></div>' +
+    '<div class="comparison-row"><span class="comparison-label">👤 你</span><span class="comparison-badge ' + userCls + ' user">' + userVoteChoice + '</span></div>' +
+    '<div class="comparison-row" style="border:none;padding-top:10px;">' +
+    '<span class="comparison-label"></span>' +
+    '<span style="font-size:13px;color:' + (agree ? 'var(--green)' : 'var(--yellow)') + ';font-weight:700;">' + (agree ? '🎉 你与 AI 大多数立场一致！' : '🤔 你与 AI 大多数立场不同，思考一下差异在哪里？') + '</span>' +
+    '</div>';
+  area.appendChild(card);
+  scrollToBottom();
+}
+// ==================== EXPORT ====================
+function exportDebate(format) {
+  if (!debateCompletedData) return;
+  const d = debateCompletedData;
+  let text = '';
+  if (format === 'md') {
+    text = '# ' + d.topic + '\n\n';
+    text += '## AI 投票统计\n';
+    let totalSup = 0, totalAgainst = 0, totalNeutral = 0;
+    d.groups_summary.forEach(g => { g.members.forEach(m => { if (m.vote === '支持') totalSup++; else if (m.vote === '反对') totalAgainst++; else totalNeutral++; }); });
+    const total = totalSup + totalAgainst + totalNeutral || 1;
+    text += '- 👍 支持: ' + totalSup + ' (' + (totalSup / total * 100).toFixed(0) + '%)\n';
+    text += '- 👎 反对: ' + totalAgainst + ' (' + (totalAgainst / total * 100).toFixed(0) + '%)\n';
+    text += '- 🤔 中立: ' + totalNeutral + ' (' + (totalNeutral / total * 100).toFixed(0) + '%)\n\n';
+    text += '## 各组投票结果\n';
+    d.groups_summary.forEach(g => {
+      text += '### ' + g.name + '\n';
+      g.members.forEach(m => { text += '- ' + m.emoji + ' ' + m.name + ': **' + m.vote + '**\n'; });
+      text += '> 共识: **' + g.vote + '**\n\n';
+    });
+    if (userVoteChoice) {
+      text += '## 用户投票\n';
+      text += '- 👤 用户立场: **' + userVoteChoice + '**';
+      if (userVoteReason) text += '\n- 📝 理由: ' + userVoteReason;
+      text += '\n\n';
+    }
+    text += '## 主策划总结\n\n' + d.summary + '\n';
+  } else {
+    text = d.topic + '\n\nAI 投票统计：\n';
+    let totalSup = 0, totalAgainst = 0, totalNeutral = 0;
+    d.groups_summary.forEach(g => { g.members.forEach(m => { if (m.vote === '支持') totalSup++; else if (m.vote === '反对') totalAgainst++; else totalNeutral++; }); });
+    const total = totalSup + totalAgainst + totalNeutral || 1;
+    text += '支持: ' + totalSup + ' (' + (totalSup / total * 100).toFixed(0) + '%)\n';
+    text += '反对: ' + totalAgainst + ' (' + (totalAgainst / total * 100).toFixed(0) + '%)\n';
+    text += '中立: ' + totalNeutral + ' (' + (totalNeutral / total * 100).toFixed(0) + '%)\n\n';
+    d.groups_summary.forEach(g => {
+      text += g.name + ' 共识: ' + g.vote + '\n';
+      g.members.forEach(m => { text += '  ' + m.emoji + ' ' + m.name + ': ' + m.vote + '\n'; });
+    });
+    if (userVoteChoice) { text += '\n用户投票: ' + userVoteChoice + (userVoteReason ? ' | ' + userVoteReason : ''); }
+    text += '\n\n主策划总结：\n' + d.summary;
+  }
+  const blob = new Blob([text], { type: format === 'md' ? 'text/markdown' : 'text/plain' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a'); a.href = url; a.download = '辩论报告_' + Date.now() + '.' + (format === 'md' ? 'md' : 'txt'); a.click();
+  URL.revokeObjectURL(url);
+}
+// ==================== UTILS ====================
+/**
+ * Enhanced content formatter:
+ * 1. HTML-escapes text first (before any processing)
+ * 2. Extracts and renders image URLs as actual images
+ * 3. Parses and styles citation markers [Wikipedia], [FRED], [Bing], etc.
+ * 4. Renders data tables from pipe-separated lines
+ * 5. Handles markdown: bold, italic, code blocks, headers
+ * 6. Splits off "数据来源" section if detected
+ */
+function formatContent(text) {
+  if (!text) return '';
+  // --- Extract sources section first ---
+  let sourcesHtml = '';
+  const sourcesMatch = text.match(/(?:【来源|来源|数据来源|Sources?:)\s*([\s\S]{10,800})$/i);
+  if (sourcesMatch) {
+    const sourcesText = sourcesMatch[1].trim();
+    text = text.replace(sourcesMatch[0], '');
+    sourcesHtml = renderSourcesSection(sourcesText);
+  }
+  // --- Step 1: HTML escape ---
+  text = text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  // --- Step 2: Extract image URLs and render as <img> ---
+  const imgPlaceholders = [];
+  text = text.replace(/(?:https?:\/\/[-a-zA-Z0-9._~:/?#\[\]@!$&'()*+,;%=]+\.(?:jpg|jpeg|png|gif|webp|bmp|svg))(?:[-a-zA-Z0-9._~:/?#\[\]@!$&'()*+,;=%]*)/gi, function(match) {
+    const idx = imgPlaceholders.length;
+    imgPlaceholders.push('<div class="agent-img-wrap">' +
+      '<img src="' + match + '" class="agent-img" loading="lazy" ' +
+      'onerror="this.style.display=\'none\';this.nextElementSibling.style.display=\'flex\'" />' +
+      '<div class="agent-img-fallback">🖼️ 图片加载失败: ' + match.substring(0, 60) + '...</div>' +
+      '</div>');
+    return '___IMG_' + idx + '___';
+  });
+  // Also catch bare URLs to image CDNs / Unsplash / etc.
+  text = text.replace(/(?:https?:\/\/[-a-zA-Z0-9._~:/?#\[\]@!$&'()*+,;%=]+\/(?:images?|photos?|pics?|img|media)[-a-zA-Z0-9._~:/?#\[\]@!$&'()*+,;=%]*)(?:\s|$|<)/gi, function(match) {
+    const url = match.trim();
+    const idx = imgPlaceholders.length;
+    imgPlaceholders.push('<div class="agent-img-wrap">' +
+      '<img src="' + url + '" class="agent-img" loading="lazy" ' +
+      'onerror="this.style.display=\'none\';this.nextElementSibling.style.display=\'flex\'" />' +
+      '<div class="agent-img-fallback">🖼️ 图片无法显示</div>' +
+      '</div>');
+    return '___IMG_' + idx + '___';
+  });
+  // --- Step 3: Parse citation markers and collect source info ---
+  const citedSources = new Set();
+  const sourceMap = {
+    'wikipedia': { icon: '📚', label: 'Wikipedia', color: '#e8710a' },
+    'wiki': { icon: '📚', label: 'Wikipedia', color: '#e8710a' },
+    '维基百科': { icon: '📚', label: '维基百科', color: '#e8710a' },
+    'wiki': { icon: '📚', label: 'Wikipedia', color: '#e8710a' },
+    'fred': { icon: '📈', label: 'FRED经济数据', color: '#059669' },
+    '宏观经济': { icon: '📈', label: '宏观经济数据', color: '#059669' },
+    'bing': { icon: '🌐', label: 'Bing搜索', color: '#0078d4' },
+    '网络搜索': { icon: '🌐', label: '网络搜索', color: '#0078d4' },
+    '36kr': { icon: '📱', label: '36Kr科技', color: '#f97316' },
+    '科技新闻': { icon: '📱', label: '科技新闻', color: '#f97316' },
+    'arxiv': { icon: '📑', label: 'arXiv学术', color: '#7c3aed' },
+    'semantic scholar': { icon: '🔬', label: '学术论文', color: '#7c3aed' },
+    'github': { icon: '💻', label: 'GitHub', color: '#24292f' },
+    '百度新闻': { icon: '📰', label: '百度新闻', color: '#2932e1' },
+    'news': { icon: '📰', label: '新闻', color: '#dc2626' },
+    'finance': { icon: '💹', label: '财经数据', color: '#059669' },
+    'yahoo finance': { icon: '💹', label: 'Yahoo Finance', color: '#7c3aed' },
+    'stock': { icon: '📊', label: '股票数据', color: '#059669' },
+  };
+  // Replace citation markers: [来源1], [Wikipedia], [FRED], 【来源】, etc.
+  text = text.replace(/\[([^\[\]]{2,30})\](?=\D|$)/g, function(match, name) {
+    const key = name.trim();
+    const src = sourceMap[key.toLowerCase()];
+    if (src) {
+      citedSources.add(key.toLowerCase());
+      return '<span class="citation" style="display:inline-flex;align-items:center;gap:2px;background:rgba(' + hexToRgb(src.color) + ',0.12);border:1px solid rgba(' + hexToRgb(src.color) + ',0.35);color:' + src.color + ';font-size:11px;padding:1px 6px;border-radius:10px;margin:0 1px;cursor:help;" title="' + src.label + '">' + src.icon + ' ' + src.label + '</span>';
+    }
+    // Generic citation
+    citedSources.add(key);
+    return '<span class="citation" style="display:inline-flex;align-items:center;gap:2px;background:rgba(124,111,255,0.12);border:1px solid rgba(124,111,255,0.3);color:var(--accent);font-size:11px;padding:1px 6px;border-radius:10px;margin:0 1px;">📎 ' + name + '</span>';
+  });
+  // Also catch 【来源名称】 style markers
+  text = text.replace(/【([^【】]{2,20})】/g, function(match, name) {
+    const key = name.trim().toLowerCase();
+    const src = sourceMap[key];
+    if (src) {
+      citedSources.add(key);
+      return '<span class="citation" style="display:inline-flex;align-items:center;gap:2px;background:rgba(' + hexToRgb(src.color) + ',0.12);border:1px solid rgba(' + hexToRgb(src.color) + ',0.35);color:' + src.color + ';font-size:11px;padding:1px 6px;border-radius:10px;margin:0 1px;cursor:help;" title="' + src.label + '">' + src.icon + ' ' + src.label + '</span>';
+    }
+    return '<span class="citation" style="display:inline-flex;align-items:center;gap:2px;background:rgba(124,111,255,0.12);border:1px solid rgba(124,111,255,0.3);color:var(--accent);font-size:11px;padding:1px 6px;border-radius:10px;margin:0 1px;">📎 ' + name + '</span>';
+  });
+  // --- Step 4: Render tables from pipe-separated lines ---
+  const lines = text.split('\n');
+  const tableLines = [];
+  let inTable = false;
+  const tableBuffer = [];
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i].trim();
+    // Detect table: lines with multiple | characters
+    if ((line.match(/\|/g) || []).length >= 2) {
+      if (!inTable) { inTable = true; tableBuffer.length = 0; }
+      tableBuffer.push(line);
+    } else {
+      if (inTable && tableBuffer.length >= 2) {
+        tableLines.push(tableBuffer.join('\n'));
+        tableBuffer.length = 0;
+      }
+      inTable = false;
+    }
+  }
+  if (inTable && tableBuffer.length >= 2) tableLines.push(tableBuffer.join('\n'));
+  // Render detected tables
+  tableLines.forEach(tableRaw => {
+    const rows = tableRaw.split('\n').map(l => l.trim()).filter(l => l);
+    if (rows.length < 2) return;
+    const colCounts = rows.map(r => (r.match(/\|/g) || []).length);
+    if (Math.max(...colCounts) < 3) return; // need at least 3 columns
+    let tableHtml = '<div style="overflow-x:auto;margin:10px 0;"><table style="width:100%;border-collapse:collapse;font-size:13px;">';
+    rows.forEach((row, ri) => {
+      const cells = row.split('|').filter((_, i, arr) => i > 0 && i < arr.length - 1);
+      if (ri === 0) {
+        // Header row
+        tableHtml += '<thead><tr style="background:rgba(124,111,255,0.15);">';
+        cells.forEach(cell => { tableHtml += '<th style="padding:8px 12px;text-align:left;border:1px solid var(--border);color:var(--accent);font-weight:700;">' + cell.trim() + '</th>'; });
+        tableHtml += '</tr></thead><tbody>';
+      } else {
+        const bg = ri % 2 === 0 ? 'var(--bg3)' : 'transparent';
+        tableHtml += '<tr style="background:' + bg + ';">';
+        cells.forEach(cell => { tableHtml += '<td style="padding:7px 12px;border:1px solid var(--border);color:var(--text);">' + cell.trim() + '</td>'; });
+        tableHtml += '</tr>';
+      }
+    });
+    tableHtml += '</tbody></table></div>';
+    text = text.replace(tableRaw, tableHtml);
+  });
+  // --- Step 5: Markdown formatting ---
+  text = text.replace(/^## (.+)$/gm, '<h2 style="color:var(--yellow);margin:12px 0 6px;font-size:15px;font-weight:700;">$1</h2>');
+  text = text.replace(/^### (.+)$/gm, '<h3 style="color:var(--cyan);margin:10px 0 4px;font-size:14px;font-weight:700;">$1</h3>');
+  text = text.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
+  text = text.replace(/\*(.+?)\*/g, '<em>$1</em>');
+  text = text.replace(/```([\s\S]*?)```/g, '<pre style="background:var(--bg);padding:12px;border-radius:8px;overflow-x:auto;margin:8px 0;border:1px solid var(--border);"><code>$1</code></pre>');
+  text = text.replace(/`([^`]+)`/g, '<code style="background:var(--bg);padding:1px 5px;border-radius:4px;font-size:12.5px;">$1</code>');
+  // --- Step 6: Numbered lists ---
+  text = text.replace(/^(\d+)\. (.+)$/gm, '<li style="margin-left:20px;padding:2px 0;"><span style="color:var(--accent);font-weight:700;margin-right:6px;">$1.</span>$2</li>');
+  // --- Step 7: Bullet lists ---
+  text = text.replace(/^[-•·] (.+)$/gm, '<li style="margin-left:20px;padding:2px 0;list-style:none;"><span style="color:var(--accent);margin-right:6px;">•</span>$1</li>');
+  // --- Step 8: Restore image placeholders ---
+  imgPlaceholders.forEach((html, idx) => {
+    text = text.replace('___IMG_' + idx + '___', html);
+  });
+  // --- Step 9: Paragraphs ---
+  text = text.replace(/\n{3,}/g, '\n\n');
+  text = text.replace(/\n\n/g, '</p><p style="margin:6px 0;">');
+  text = text.replace(/\n/g, '<br>');
+  // --- Step 10: Wrap in paragraph ---
+  let result = '<div class="agent-content-body" style="line-height:1.9;font-size:14px;">';
+  result += '<p style="margin:6px 0;">' + text + '</p>';
+  // Add sources section if there were citations or extracted sources
+  if (citedSources.size > 0 || sourcesHtml) {
+    const citedList = Array.from(citedSources).map(k => {
+      const src = sourceMap[k];
+      if (src) return '<span style="display:inline-flex;align-items:center;gap:3px;background:rgba(' + hexToRgb(src.color) + ',0.1);border:1px solid rgba(' + hexToRgb(src.color) + ',0.25);color:' + src.color + ';font-size:11px;padding:2px 8px;border-radius:10px;margin:2px;">' + src.icon + ' ' + src.label + '</span>';
+      return '<span style="display:inline-flex;align-items:center;gap:3px;background:rgba(124,111,255,0.1);border:1px solid rgba(124,111,255,0.25);color:var(--accent);font-size:11px;padding:2px 8px;border-radius:10px;margin:2px;">📎 ' + k + '</span>';
+    }).join('');
+    result += '<div class="agent-sources" style="margin-top:12px;padding-top:10px;border-top:1px solid var(--border);">' +
+      '<div style="font-size:11px;color:var(--text2);font-weight:600;margin-bottom:6px;display:flex;align-items:center;gap:4px;">📖 引用数据来源 ' +
+      '<span style="font-weight:400;font-size:10px;">（以下信息来源已被 AI 引用）</span></div>' +
+      citedList + (sourcesHtml ? '<div style="margin-top:6px;font-size:12px;color:var(--text2);">' + sourcesHtml + '</div>' : '') +
+      '</div>';
+  }
+  result += '</div>';
+  return result;
+}
+function renderSourcesSection(text) {
+  if (!text) return '';
+  // Clean and format source text
+  const lines = text.split('\n').filter(l => l.trim());
+  if (lines.length === 0) return '';
+  return lines.map(l => {
+    const clean = l.replace(/^[-•·*\d.。]+\s*/, '').trim();
+    return '<div style="font-size:11px;color:var(--text2);padding:2px 0;">• ' + clean + '</div>';
+  }).join('');
+}
+// Smart scroll: only auto-scrolls when user is at/near the bottom.
+// When scrolled up, shows a "↓ 最新内容" badge to jump back.
+let _scrolledUp = false;
+let _lastScrollTop = 0;
+let _jumpBtn = null;
+function scrollToBottom(force) {
+  const area = document.getElementById('debateArea');
+  if (!area) return;
+  if (force) {
+    area.scrollTop = area.scrollHeight;
+    _scrolledUp = false;
+    if (_jumpBtn) { _jumpBtn.style.display = 'none'; }
+    return;
+  }
+  if (_scrolledUp) return; // user scrolled up — don't interrupt
+  area.scrollTop = area.scrollHeight;
+}
+function _onDebateAreaScroll() {
+  const area = document.getElementById('debateArea');
+  if (!area) return;
+  // atBottom = user is within 80px of the bottom edge
+  const distFromBottom = area.scrollHeight - area.scrollTop - area.clientHeight;
+  if (distFromBottom < 80) {
+    // Near bottom — resume auto-follow
+    _scrolledUp = false;
+    if (_jumpBtn) _jumpBtn.style.display = 'none';
+  } else {
+    // Scrolled up — stop auto-follow, show jump button
+    _scrolledUp = true;
+    _ensureJumpBtn(area);
+  }
+}
+function _ensureJumpBtn(area) {
+  if (!_jumpBtn) {
+    _jumpBtn = document.createElement('button');
+    _jumpBtn.id = 'jumpToLatest';
+    _jumpBtn.innerHTML = '↓ 最新内容';
+    _jumpBtn.style.cssText = [
+      'position:fixed',
+      'bottom:24px',
+      'left:50%',
+      'transform:translateX(-50%)',
+      'background:linear-gradient(135deg,var(--accent),#6b5cf0)',
+      'color:white',
+      'border:none',
+      'border-radius:24px',
+      'padding:8px 20px',
+      'font-size:13px',
+      'font-weight:700',
+      'cursor:pointer',
+      'box-shadow:0 4px 16px rgba(124,111,255,0.4)',
+      'z-index:9999',
+      'transition:opacity 0.2s',
+      'display:none',
+    ].join(';');
+    _jumpBtn.onclick = function() { scrollToBottom(true); };
+    document.body.appendChild(_jumpBtn);
+  }
+  // Position it above the right panel
+  const panel = document.getElementById('inputPanel');
+  if (panel) {
+    const rect = panel.getBoundingClientRect();
+    _jumpBtn.style.left = 'auto';
+    _jumpBtn.style.right = (window.innerWidth - rect.left + 4) + 'px';
+  }
+  _jumpBtn.style.display = 'block';
+}
+function hexToRgb(hex) {
+  hex = hex.replace('#', '');
+  const r = parseInt(hex.substring(0, 2), 16) || 128;
+  const g = parseInt(hex.substring(2, 4), 16) || 128;
+  const b = parseInt(hex.substring(4, 6), 16) || 128;
+  return r + ',' + g + ',' + b;
+}
+function addPhaseBanner(text) {
+  const content = document.getElementById('debateContent');
+  const existing = content.querySelector('.phase-banner');
+  if (existing) existing.remove();
+  const banner = document.createElement('div'); banner.className = 'phase-banner'; banner.textContent = text;
+  content.insertBefore(banner, content.firstChild);
+}
+function addStatus(text, type) {
+  const area = document.getElementById('statusArea');
+  const item = document.createElement('div');
+  item.className = 'status-item' + (type === 'active' ? ' active' : type === 'done' ? ' done' : '');
+  const dot = type === 'active' ? '<div class="spinner"></div>' : '<div class="status-dot"></div>';
+  item.innerHTML = dot + text;
+  area.appendChild(item);
+  area.scrollTop = area.scrollHeight;
+}
+function showError(msg) {
+  // Show error prominently in statusArea (always visible in input-panel)
+  const sa = document.getElementById('statusArea');
+  if (sa) { sa.innerHTML = '<div class="status-item status-error" style="color:var(--red);background:rgba(248,113,113,0.1);border:1px solid var(--red);border-radius:8px;padding:10px 14px;margin:4px 0;"><span style="margin-right:6px;">❌</span>' + msg + '<br><span style="font-size:12px;color:var(--text2);margin-top:4px;display:block;">点击"开始辩论"按钮重试</span></div>'; sa.scrollTop = sa.scrollTop + 100; }
+  const area = document.getElementById('debateArea');
+  if (area) {
+    const err = document.createElement('div');
+    err.style = 'background:rgba(248,113,113,0.1);border:1px solid var(--red);border-radius:12px;padding:16px;color:var(--red);margin:8px;';
+    err.textContent = '错误: ' + msg; area.appendChild(err);
+  }
+}
+function resetUI() {
+  // Only re-enable form if no debate is currently running
+  // Only re-enable form if no debate is currently running
+  if (isRunning) return;
+  const btns = ['analyzeBtn', 'startDebateBtn'];
+  btns.forEach(id => { const b = document.getElementById(id); if (b) { b.disabled = false; if (id === 'startDebateBtn') b.innerHTML = '🚀 开始辩论'; } });
+  const ti = document.getElementById('topicInput'); if (ti) ti.disabled = false;
+  // Only reset statusArea if it doesn't contain an error (don't overwrite errors)
+  const sa = document.getElementById('statusArea');
+  if (sa && !sa.querySelector('.status-error')) {
+    sa.innerHTML = '<div class="status-item"><div class="status-dot"></div> 等待发起辩论...</div>';
+  }
+  // Clear stale state
+  voteOptions = [];
+  currentTopic = '';
+  currentFields = [];
+  // Close SSE connection
+  if (evtSource) { evtSource.close(); evtSource = null; }
+  _activeStreamId++; // invalidate any in-flight old events
+  isRunning = false;
+  // Reset all state
+  currentSession = null;
+  activeGroups = {};
+  currentRound = 0;
+  debateCompletedData = null;
+  userVoteSubmitted = false;
+  userVoteChoice = null;
+  userVoteReason = '';
+  // Remove all spinner indicators
+  document.querySelectorAll('.spinner').forEach(s => s.remove());
+  // Hide vote tracker
+  const vt = document.getElementById('voteTrackerTop');
+  if (vt) { vt.style.display = 'none'; vt.innerHTML = ''; }
+  // Clear debateArea (stats, final-card, comparison from previous debate)
+  const da = document.getElementById('debateArea');
+  if (da) da.innerHTML = '';
+  // Hide user vote panel
+  const uvp = document.getElementById('userVotePanel');
+  if (uvp) uvp.style.display = 'none';
+  addStatus('已停止', '');
+}
+// ==================== SETTINGS ====================
+let settingsProviders = {}, settingsCurrentProvider = 'minimax', settingsCurrentConfig = {};
+async function openSettings() {
+  const overlay = document.getElementById('settingsOverlay');
+  const fieldsContainer = document.getElementById('settingsFields');
+  const providerGrid = document.getElementById('providerGrid');
+  const testResult = document.getElementById('settingsTestResult');
+  // Immediately show modal with loading state
+  overlay.classList.add('open');
+  fieldsContainer.innerHTML = '<div style="text-align:center;padding:40px 20px;color:var(--text2);font-size:14px;"><span class="spinner" style="margin:0 auto 12px;display:block;"></span>加载中...</div>';
+  providerGrid.innerHTML = '';
+  if (testResult) { testResult.style.display = 'none'; }
+  try {
+    const resp = await fetch('/api/config');
+    if (!resp.ok) throw new Error('HTTP ' + resp.status);
+    const data = await resp.json();
+    settingsProviders = data.providers || {};
+    settingsCurrentConfig = data;
+    settingsCurrentProvider = data.provider || 'minimax';
+    renderProviderGrid();
+    renderProviderFields(settingsCurrentProvider, data);
+    updateApiBadge(data);
+  } catch (e) {
+    fieldsContainer.innerHTML = '<div style="text-align:center;padding:30px 20px;color:var(--red);font-size:13px;">❌ 加载失败: ' + e.message + '<br><br><button onclick="openSettings()" style="background:var(--bg3);border:1px solid var(--border);color:var(--text);padding:6px 16px;border-radius:8px;cursor:pointer;">重试</button></div>';
+    console.error('Settings load error:', e);
+  }
+}
+function closeSettings() { document.getElementById('settingsOverlay').classList.remove('open'); }
+function updateApiBadge(data) {
+  const badge = document.getElementById('apiStatusBadge');
+  if (!badge) return;
+  if (data.configured) {
+    badge.textContent = '✅ ' + (settingsProviders[data.provider]?.name || data.provider);
+    badge.classList.add('ok'); badge.removeAttribute('onclick');
+  } else {
+    badge.textContent = '⚠️ 未配置'; badge.classList.remove('ok'); badge.setAttribute('onclick', 'openSettings()');
+  }
+}
+function renderProviderGrid() {
+  const icons = { minimax:'🔬', deepseek:'🔵', openai:'⚡', anthropic:'🧠', google:'🌐', mistral:'🌬️', cohere:'🌀', together:'🤝', huggingface:'🤗', novita:'🚀', azure:'☁️', groq:'⚡', openrouter:'🌍' };
+  const grid = document.getElementById('providerGrid'); grid.innerHTML = '';
+  Object.entries(settingsProviders).forEach(([id, p], i) => {
+    const btn = document.createElement('div');
+    btn.className = 'provider-btn' + (id === settingsCurrentProvider ? ' selected' : '');
+    btn.innerHTML = '<span class="picon">' + (icons[id] || '📡') + '</span><span>' + p.name + '</span>';
+    btn.onclick = () => { settingsCurrentProvider = id; renderProviderFields(id, {}); document.querySelectorAll('.provider-btn').forEach((b, j) => { b.classList.toggle('selected', j === i); }); };
+    grid.appendChild(btn);
+  });
+}
+function renderProviderFields(providerId, data) {
+  const meta = settingsProviders[providerId]; const container = document.getElementById('settingsFields');
+  if (!meta) return;
+  const currentKey = data.api_key || ''; const currentUrl = data.base_url || meta.url_default || ''; const currentModel = data.model || meta.models?.[0]?.id || '';
+  const modelsHtml = (meta.models || []).map(m => '<option value="' + m.id + '"' + (m.id === currentModel ? ' selected' : '') + '>' + m.name + '</option>').join('');
+  container.innerHTML =
+    '<div class="settings-field"><label>🔑 API Key</label><input type="password" id="cfgApiKey" placeholder="输入你的 API Key" value="' + currentKey + '" autocomplete="off" /></div>' +
+    '<div class="settings-field"><label>🌐 API 地址</label><input type="text" id="cfgBaseUrl" placeholder="' + (meta.url_placeholder || meta.url_default) + '" value="' + currentUrl + '" /></div>' +
+    '<div class="settings-field"><label>🤖 模型</label><select id="cfgModel">' + modelsHtml + '</select><div class="settings-hint">选择该提供商下的模型</div></div>';
+}
+async function testApiConfig() {
+  const result = document.getElementById('settingsTestResult'); const testBtn = document.getElementById('testBtn');
+  result.className = 'testing'; result.textContent = '🔄 测试中...'; result.style.display = 'block';
+  const apiKey = document.getElementById('cfgApiKey').value.trim(); const baseUrl = document.getElementById('cfgBaseUrl').value.trim(); const model = document.getElementById('cfgModel').value;
+  if (!apiKey) { result.className = 'fail'; result.textContent = '❌ 请先输入 API Key'; return; }
+  try {
+    const resp = await fetch('/api/config/test', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({ provider: settingsCurrentProvider, api_key: apiKey, base_url: baseUrl, model })});
+    const data = await resp.json();
+    if (data.success) { result.className = 'ok'; result.textContent = '✅ 连接成功！响应: ' + data.message; }
+    else { result.className = 'fail'; result.textContent = '❌ 连接失败: ' + data.message; }
+  } catch (e) { result.className = 'fail'; result.textContent = '❌ 网络错误: ' + e.message; }
+}
+async function saveApiConfig() {
+  const saveBtn = document.getElementById('saveBtn'); const result = document.getElementById('settingsTestResult');
+  saveBtn.disabled = true; saveBtn.textContent = '保存中...';
+  const apiKey = document.getElementById('cfgApiKey').value.trim(); const baseUrl = document.getElementById('cfgBaseUrl').value.trim(); const model = document.getElementById('cfgModel').value;
+  const finalKey = apiKey || settingsCurrentConfig.api_key || '';
+  try {
+    const resp = await fetch('/api/config', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({ provider: settingsCurrentProvider, api_key: finalKey, base_url: baseUrl, model })});
+    const data = await resp.json();
+    if (data.success) {
+      settingsCurrentConfig = { ...settingsCurrentConfig, provider: settingsCurrentProvider, model, configured: true };
+      updateApiBadge(settingsCurrentConfig);
+      result.className = 'ok'; result.textContent = '✅ 设置已保存，正在使用 ' + (settingsProviders[settingsCurrentProvider]?.name || settingsCurrentProvider) + ' / ' + model;
+      setTimeout(closeSettings, 1200);
+    } else { result.className = 'fail'; result.textContent = '❌ 保存失败'; }
+  } catch (e) { result.className = 'fail'; result.textContent = '❌ 保存失败: ' + e.message; }
+  finally { saveBtn.disabled = false; saveBtn.textContent = '💾 保存设置'; }
+}
+// Init
+(async function initSettings() {
+  try {
+    const resp = await fetch('/api/config'); const data = await resp.json();
+    settingsProviders = data.providers || {}; settingsCurrentConfig = data; settingsCurrentProvider = data.provider || 'minimax';
+    updateApiBadge(data);
+  } catch (e) { console.error('Failed to load config on init:', e); }
+})();
+// Attach smart scroll listener to debate area
+(function() {
+  const area = document.getElementById('debateArea');
+  if (area) area.addEventListener('scroll', _onDebateAreaScroll, { passive: true });
+  // Also watch resize for jump button repositioning
+  window.addEventListener('resize', function() {
+    if (_scrolledUp) { _ensureJumpBtn(document.getElementById('debateArea')); }
+  }, { passive: true });
+})();
+function showUserVotePanelInPanel() {
+  showUserVotePanel();
+}
+function _onScroll() {
+  const area = document.getElementById('debateArea');
+  if (!area) return;
+  const dist = area.scrollHeight - area.scrollTop - area.clientHeight;
+  if (dist < 80) { _scrolledUp = false; if (_jumpBtn) _jumpBtn.style.display = 'none'; }
+  else { _scrolledUp = true; _ensureJumpBtn(area); }
+}
+function _ensureJumpBtn(area) {
+  if (!_jumpBtn) {
+    _jumpBtn = document.createElement('button'); _jumpBtn.id = 'jumpToLatest';
+    _jumpBtn.innerHTML = '\u2193 最新内容';
+    _jumpBtn.style.cssText = 'position:fixed;bottom:24px;left:50%;transform:translateX(-50%);background:linear-gradient(135deg,var(--accent),#6b5cf0);color:white;border:none;border-radius:24px;padding:8px 20px;font-size:13px;font-weight:700;cursor:pointer;box-shadow:0 4px 16px rgba(124,111,255,0.4);z-index:9999;display:none;';
+    _jumpBtn.onclick = function() { scrollToBottom(true); };
+    document.body.appendChild(_jumpBtn);
+  }
+  const panel = document.getElementById('inputPanel');
+  if (panel) { const rect = panel.getBoundingClientRect(); _jumpBtn.style.right = (window.innerWidth - rect.left + 4) + 'px'; _jumpBtn.style.left = 'auto'; }
+  _jumpBtn.style.display = 'block';
+}
+// Init scroll listener
+(function() {
+  const area = document.getElementById('debateArea');
+  if (area) area.addEventListener('scroll', _onScroll, { passive: true });
+  window.addEventListener('resize', function() { if (_scrolledUp) _ensureJumpBtn(document.getElementById('debateArea')); }, { passive: true });
+})();
+</script>
 </body>
 </html>
