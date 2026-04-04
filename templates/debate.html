@@ -705,6 +705,15 @@ function resetForm() {
   if (sa) sa.innerHTML = '<div class="status-item"><div class="status-dot"></div> 等待发起辩论...</div>';
 }
 // ==================== DEBATE ====================
+function stopDebate() {
+  // Close SSE connection
+  if (evtSource) { evtSource.close(); evtSource = null; }
+  _activeStreamId++; // invalidate any in-flight old events
+  isRunning = false;
+  // Reset status area
+  const sa = document.getElementById('statusArea');
+  if (sa) sa.innerHTML = '';
+}
 function startDebate() {
   console.log('[DEBUG] startDebate called, isRunning=' + isRunning);
   const topic = currentTopic || document.getElementById('topicInput').value.trim();
