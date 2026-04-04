@@ -20,7 +20,7 @@ class DeepSeekClient:
         import os
         self.API_KEY = os.environ.get("DEEPSEEK_API_KEY", "")
 
-    def chat(self, messages, system="", max_tokens=8000):
+    def chat(self, messages, system="", max_tokens=400):
         import requests
         if not self.API_KEY:
             return "[Error: DeepSeek API key not set (DEEPSEEK_API_KEY env)]"

@@ -728,7 +728,8 @@ function handleEvent(evt, streamId) {
   else if (t === 'agent_start') { handleAgentStart(d); }
   else if (t === 'agent_message') { handleAgentMessage(d); }
   else if (t === 'agent_done') { handleAgentDone(d); }
-  else if (t === 'group_round_done') { markGroupDone(d.group_id); }
+  else if (t === 'group_round_done') { handleGroupRoundDone(d); }
+  else if (t === 'round_summary') { handleRoundSummary(d); }
   else if (t === 'group_voting') { handleGroupVoting(d); }
   else if (t === 'vote_cast') { handleVoteCast(d); }
   else if (t === 'group_vote_result') { handleGroupVoteResult(d); }
@@ -751,6 +752,30 @@ function handleGroupsCreated(d) {
     content.appendChild(card);
   });
   buildVoteTracker(d.groups);
+}
+
+function handleRoundSummary(d) {
+  const content = document.getElementById('debateContent');
+  const card = document.createElement('div'); card.className = 'round-summary-card';
+  card.innerHTML =
+    '<div class="round-summary-header">' +
+    '  <span>\u{1F4CB} 第 ' + d.round + ' 轮要点</span>' +
+    '  <span class="round-summary-label">' + (d.label||'') + '</span></div>' +
+    '<div class="round-summary-body">' + formatContent(d.summary) + '</div>';
+  content.appendChild(card);
+  scrollToBottom(true);
+  addStatus('第 ' + d.round + ' 轮结束', 'done');
+}
+
+function updateTrackerGroup(groupId, votes) {
+  if (!votes) return;
+  const total = votes.sup + votes.against + votes.neutral || 1;
+  const sp = (votes.sup / total * 100).toFixed(0), ap = (votes.against / total * 100).toFixed(0), np = (votes.neutral / total * 100).toFixed(0);
+  const bar = document.getElementById('bar-' + groupId);
+  if (bar) {
+    const s = bar.querySelector('.vote-bar-sup'), a = bar.querySelector('.vote-bar-against'), n = bar.querySelector('.vote-bar-neutral');
+    if (s) s.style.width = sp + '%'; if (a) a.style.width = ap + '%'; if (n) n.style.width = np + '%';
+  }
 }
 
 function handleResearching(d) {
@@ -798,6 +823,13 @@ function handleAgentMessage(d) {
   }
 }
 
+
+
+function handleGroupRoundDone(d) {
+  const badge = document.getElementById('badge-' + d.group_id);
+  if (badge) badge.className = 'group-badge';
+  updateTrackerGroup(d.group_id, d.votes);
+}
 function handleAgentDone(d) {
   const entry = document.getElementById('agent-entry-' + d.group_id + '-' + d.agent_key);
   if (entry) { const sp = entry.querySelector('.spinner'); if (sp) sp.remove(); }
@@ -877,6 +909,27 @@ function handleGroupVoteResult(d) {
 }
 
 // ==================== FINAL ====================
+
+
+function buildTracker(groups) {
+  const tracker = document.getElementById('voteTrackerTop');
+  tracker.style.display = 'block';
+  tracker.innerHTML =
+    '<div class="vote-tracker-header">' +
+    '  <div class="vote-tracker-title">\u{1F4CA} 实时投票监控</div>' +
+    '  <button class="vote-tracker-toggle" id="trackerToggle" onclick="toggleTracker()">收起 \u{25B2}</button></div>' +
+    '<div class="vote-tracker-body" id="trackerBody"></div>';
+  const body = document.getElementById('trackerBody');
+  groups.forEach(g => {
+    const row = document.createElement('div'); row.className = 'vote-group-row'; row.id = 'tracker-row-' + g.id;
+    row.innerHTML =
+      '<span class="vote-group-name">' + g.name + '</span>' +
+      '<div class="vote-bar-container" id="bar-' + g.id + '">' +
+      '  <div class="vote-bar-sup" style="width:0%"></div><div class="vote-bar-against" style="width:0%"></div><div class="vote-bar-neutral" style="width:0%"></div></div>' +
+      '<span class="vote-group-status" id="tracker-status-' + g.id + '" style="color:var(--text2);">投票中</span>';
+    body.appendChild(row);
+  });
+}
 function handleFinalAnswer(d) {
   debateCompletedData = d;
   let totalSup = 0, totalAgainst = 0, totalNeutral = 0;
@@ -1481,6 +1534,44 @@ async function saveApiConfig() {
   window.addEventListener('resize', function() {
     if (_scrolledUp) { _ensureJumpBtn(document.getElementById('debateArea')); }
   }, { passive: true });
+})();
+
+function showUserVotePanelInPanel() {
+  const panel = document.getElementById('userVotePanel'); panel.style.display = 'block';
+  if (userVoteSubmitted) return;
+  userVoteChoice = null;
+  ['Sup', 'Against', 'Neutral'].forEach(c => { const b = document.getElementById('uv' + c); if (b) b.classList.remove('selected', 'sup', 'against', 'neutral'); });
+  document.getElementById('uvReason').style.display = 'none';
+  const sb = document.getElementById('uvSubmit'); if (sb) { sb.style.display = 'none'; sb.classList.remove('submitted'); sb.textContent = '提交我的投票'; }
+  const rv = document.getElementById('uvResult'); if (rv) rv.style.display = 'none';
+}
+
+function _onScroll() {
+  const area = document.getElementById('debateArea');
+  if (!area) return;
+  const dist = area.scrollHeight - area.scrollTop - area.clientHeight;
+  if (dist < 80) { _scrolledUp = false; if (_jumpBtn) _jumpBtn.style.display = 'none'; }
+  else { _scrolledUp = true; _ensureJumpBtn(area); }
+}
+
+function _ensureJumpBtn(area) {
+  if (!_jumpBtn) {
+    _jumpBtn = document.createElement('button'); _jumpBtn.id = 'jumpToLatest';
+    _jumpBtn.innerHTML = '\u2193 最新内容';
+    _jumpBtn.style.cssText = 'position:fixed;bottom:24px;left:50%;transform:translateX(-50%);background:linear-gradient(135deg,var(--accent),#6b5cf0);color:white;border:none;border-radius:24px;padding:8px 20px;font-size:13px;font-weight:700;cursor:pointer;box-shadow:0 4px 16px rgba(124,111,255,0.4);z-index:9999;display:none;';
+    _jumpBtn.onclick = function() { scrollToBottom(true); };
+    document.body.appendChild(_jumpBtn);
+  }
+  const panel = document.getElementById('inputPanel');
+  if (panel) { const rect = panel.getBoundingClientRect(); _jumpBtn.style.right = (window.innerWidth - rect.left + 4) + 'px'; _jumpBtn.style.left = 'auto'; }
+  _jumpBtn.style.display = 'block';
+}
+
+// Init scroll listener
+(function() {
+  const area = document.getElementById('debateArea');
+  if (area) area.addEventListener('scroll', _onScroll, { passive: true });
+  window.addEventListener('resize', function() { if (_scrolledUp) _ensureJumpBtn(document.getElementById('debateArea')); }, { passive: true });
 })();
 </script>
 </body>
