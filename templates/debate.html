@@ -612,7 +612,7 @@ async function analyzeTopic() {
   btn.disabled = true;
   btn.innerHTML = '<span class="spinner-sm"></span> AI 分析中...';
   try {
-    const resp = await fetch('/api/debate/analyze', { method: 'POST', signal: AbortSignal.timeout(30000), headers: {'Content-Type': 'application/json'}, body: JSON.stringify({topic}) });
+    const resp = await fetch('/api/debate/analyze', { method: 'POST', signal: AbortSignal.timeout(60000), headers: {'Content-Type': 'application/json'}, body: JSON.stringify({topic}) });
     const data = await resp.json();
     if (data.error) {
       const sa = document.getElementById('statusArea');
@@ -752,7 +752,7 @@ function startDebate() {
   // Show "正在连接..." in statusArea
   const sa = document.getElementById('statusArea');
   if (sa) { sa.innerHTML = '<div class="status-item active"><div class="spinner"></div> 正在连接辩论系统...</div>'; }
-  fetch('/api/debate/start', { method: 'POST', signal: AbortSignal.timeout(30000), headers: {'Content-Type': 'application/json'}, body: JSON.stringify({topic, user_input}) })
+  fetch('/api/debate/start', { method: 'POST', signal: AbortSignal.timeout(60000), headers: {'Content-Type': 'application/json'}, body: JSON.stringify({topic, user_input}) })
   .then(r => r.json())
   .then(data => {
     if (data.error) {
@@ -833,12 +833,29 @@ function connectStream(sessionId) {
     if (sa) { sa.innerHTML = '<div class="status-item status-error" style="color:var(--red);background:rgba(248,113,113,0.1);border:1px solid var(--red);border-radius:8px;padding:10px 14px;margin:4px 0;"><span style="margin-right:6px;">❌</span>连接超时（服务器未响应）<br><span style="font-size:12px;color:var(--text2);">请检查 API 配置是否正确，或稍后重试</span></div>'; }
     resetUI();
   }, 15000);
-  // Cancel timeout when first event arrives
-  var _origOnmsg = evtSource.onmessage;
-  evtSource.onmessage = function(e) {
-    clearTimeout(connectionTimeout);
-    _origOnmsg.call(evtSource, e);
-  };
+}
+function handleEvent(d, sid) {
+  if (sid !== _activeStreamId) return;
+  const t = d.type || d;
+  if (t === 'ping' || t === 'stream_end') return;
+  if (t === 'error') { showError(d.message || d.data?.message || String(d)); return; }
+  if (t === 'phase') { addPhaseBanner(d.data?.title || d.title || ''); addStatus((d.data?.phase || d.phase || '') + ' 阶段', 'active'); }
+  else if (t === 'planner_message') { addPhaseBanner('🧠 策划: ' + (d.data?.content || d.content || '').substring(0, 100)); }
+  else if (t === 'group_start') { handleGroupStart(d); }
+  else if (t === 'groups_created') { handleGroupsCreated(d); }
+  else if (t === 'researching') { handleResearching(d); }
+  else if (t === 'research_complete') { handleResearchComplete(d); }
+  else if (t === 'round_start') { currentRound = d.round; addPhaseBanner('🔄 第 ' + d.round + ' 轮讨论 — ' + (d.title || '')); addStatus('第 ' + d.round + ' 轮进行中', 'active'); }
+  else if (t === 'agent_start') { handleAgentStart(d); }
+  else if (t === 'agent_message') { handleAgentMessage(d); }
+  else if (t === 'agent_done') { handleAgentDone(d); }
+  else if (t === 'group_round_done') { handleGroupRoundDone(d); }
+  else if (t === 'round_summary') { handleRoundSummary(d); }
+  else if (t === 'group_voting') { handleGroupVoting(d); }
+  else if (t === 'vote_cast') { handleVoteCast(d); }
+  else if (t === 'group_vote_result') { handleGroupVoteResult(d); }
+  else if (t === 'final_answer') { handleFinalAnswer(d); }
+  else if (t === 'complete') { isRunning = false; if (evtSource) evtSource.close(); evtSource = null; addStatus('全部完成', 'done'); showUserVotePanelInPanel(); document.getElementById('exportBtn').style.display = 'flex'; resetUI(); }
 }
 function handleGroupsCreated(d) {
   if (d.vote_options && d.vote_options.length > 0) { voteOptions = d.vote_options; }
