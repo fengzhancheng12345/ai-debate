@@ -847,7 +847,7 @@ function handleEvent(d, sid) {
   else if (t === 'groups_created') { handleGroupsCreated(d); }
   else if (t === 'researching') { handleResearching(d); }
   else if (t === 'research_complete') { handleResearchComplete(d); }
-  else if (t === 'round_start') { currentRound = d.round; addPhaseBanner('🔄 第 ' + d.round + ' 轮讨论 — ' + (d.title || '')); addStatus('第 ' + d.round + ' 轮进行中', 'active'); }
+  else if (t === 'round_start') { currentRound = d.data?.round ?? d.round; addPhaseBanner('🔄 第 ' + (d.data?.round ?? d.round) + ' 轮讨论 — ' + (d.data?.title || d.title || '')); addStatus('第 ' + (d.data?.round ?? d.round) + ' 轮进行中', 'active'); }
   else if (t === 'agent_start') { handleAgentStart(d); }
   else if (t === 'agent_message') { handleAgentMessage(d); }
   else if (t === 'agent_done') { handleAgentDone(d); }
