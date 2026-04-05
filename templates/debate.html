@@ -945,7 +945,7 @@ function handleAgentMessage(d) {
     let c = document.getElementById(containerId);
     if (!c) { var groupCard = document.getElementById('group-' + (d.data?.group_key || d.group_id)); if (groupCard) c = groupCard.querySelector('.agents-container'); }
     if (c) {
-      var entry = document.createElement('div'); entry.className = 'agent-entry';
+      const entry = document.createElement('div'); entry.className = 'agent-entry';
       entry.id = 'agent-entry-' + (d.data?.group_key || d.group_id) + '-' + (d.data?.agent_key || d.agent_key);
       entry.innerHTML = '<div class="agent-meta"><div class="agent-avatar" style="border-color:' + (d.data?.color || d.color || '#6366f1') + ';">' + (d.data?.emoji || d.emoji || '🤖') + '</div><span class="agent-name" style="color:' + (d.data?.color || d.color || '#6366f1') + ';">' + (d.data?.agent_name || d.agent_name || 'AI') + '</span><span class="spinner" style="margin-left:auto;"></span></div><div class="agent-content" id="agent-content-' + (d.data?.group_key || d.group_id) + '-' + (d.data?.agent_key || d.agent_key) + '">' + formatContent(d.data?.content || d.content || '') + '</div>';
       c.appendChild(entry);
